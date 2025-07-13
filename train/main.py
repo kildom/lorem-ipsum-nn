@@ -1,20 +1,25 @@
 
+import re
+import sys
 import json
 import math
 import torch
 import torch.nn as nn
 import numpy as np
 import numpy.typing as npt
-import torch.nn.functional as F
 import random
+import argparse
 from pprint import pprint
 from pathlib import Path
-from torch.utils.data import Dataset, DataLoader, random_split
 from dataset import TextDataset
 from model import GROUPS_PER_CONTEXT, GeneratorSharedNet, LETTER_EMBEDDING_SIZE, LETTER_EMBEDDING_INTER_SIZE, LETTERS_PER_GROUP
 from quantizer import QuantizedLinear, QuantizedReLU
 from train import train, DEFAULT_EPOCHS, DEFAULT_LEARNING_RATE
-from lang import LangConfig, get_lang_config
+from lang import LangConfig, get_lang_config, get_languages
+from format_c import format_c
+
+MAX_WORDS_IN_SENTENCE = 40
+MAX_WORDS_TO_COMMA = 20
 
 def header(text):
     print()
@@ -325,7 +330,8 @@ def quantize_model(model: GeneratorSharedNet, letter_to_embedding):
         letter_index = random_probs(prob_cumsum, i)
         print(f"{model.lang.INDEX_TO_LETTER[letter_index]}: {exponents_fixed[letter_index]}")
 
-    output_dict = {
+    output_model = {
+        'lang': model.lang.CODE,
         'letters': ''.join(model.lang.LETTER_TO_INDEX.keys()),
         'letters_embedding': letter_to_embedding,
         'group': group_inter_linear.store() + relu.store() + group_output_linear.store() + relu.store(),
@@ -338,33 +344,124 @@ def quantize_model(model: GeneratorSharedNet, letter_to_embedding):
         'empty_group_embedding': relu(group_output_linear(relu(group_inter_linear(str_to_emb('    '))))).tolist(),
     }
 
-    MODEL_JSON = Path(__file__).parent.parent / f"data/{model.lang.CODE}/quantized-model.json"
-    MODEL_JSON.write_text(json.dumps(output_dict))
+    return output_model
 
-    # logits = logits_fixed.astype(np.float32) / (1 << fractional_bits)
-    # probabilities = softmax(logits)
 
-    #pprint(([f'{INDEX_TO_LETTER[i]}: {x >> prob_frac_bits}' for i, x in enumerate(exponents_fixed)], np.exp(logits).astype(np.int32)))
-    pprint((exponents_fixed, prob_cumsum))
+def punctuation_stats(lang: LangConfig, output_model: dict):
+    header('Calculating punctuation statistics')
 
-    #pprint((logits, logits_fixed, (probabilities * 65536).astype(np.int32), sum(probabilities)))
+    def prob_normalize(probabilities, total=9999):
+        sum_prob = sum(probabilities)
+        probabilities = [x / sum_prob * total for x in probabilities]
+        int_prob = [int(round(x)) for x in probabilities]
+        while sum(int_prob) > total:
+            diff = [probabilities[i] - int_prob[i] for i in range(len(probabilities))]
+            min_diff = min(diff)
+            index = diff.index(min_diff)
+            assert int_prob[index] > 0
+            int_prob[index] -= 1
+        while sum(int_prob) < total:
+            diff = [probabilities[i] - int_prob[i] for i in range(len(probabilities))]
+            max_diff = max(diff)
+            index = diff.index(max_diff)
+            int_prob[index] += 1
+        cumulative_sum = [sum(int_prob[:i + 1]) for i in range(len(int_prob))]
+        return cumulative_sum
 
-    #for i in range(19):
-     #   pprint((i, 33554432 * math.exp(4 / (1 << i)), math.exp(4 / (1 << i))))
+    text = lang.get_text()
+    text = re.sub(r"\s+", ' ', text)
+    text = re.sub(r"[\s,.]*\.[\s,.]*", '.', text)
+    text = re.sub(r"[\s,]*,[\s,]*", ',', text)
+    text = re.sub(r'\s*\w+\s*', 'a', text)
 
-    # pprint(head_output_linear.output_range[:,1])
-    # pprint(head_output_linear.factors)
-    # pprint(inv_factors_u0_31)
-    # pprint(head_output_linear.output_range[:,0] / head_output_linear.factors)
-    # pprint(head_output_linear.output_range[:,1] / head_output_linear.factors)
-    # pprint(max_abs_output)
+    index = 0
+    prob_dot = [0] * (MAX_WORDS_IN_SENTENCE + 1)
+    max_words = 0
 
-def main():
-    lang = get_lang_config('la')
+    while index < len(text):
+        next_dot = text.find('.', index)
+        if next_dot <= 0:
+            break
+        words = text[index:next_dot].count('a')
+        if words > MAX_WORDS_IN_SENTENCE:
+            index = next_dot + 1
+            continue
+        max_words = max(max_words, words)
+        prob_dot[words] += 1
+        index = next_dot + 1
+
+    prob_dot[0] = 0
+    prob_dot[1] = 0
+    cumsum_dot = prob_normalize(prob_dot)
+
+    index = 0
+
+    prob_comma = [[0] * (MAX_WORDS_TO_COMMA + 1) for _ in range(MAX_WORDS_IN_SENTENCE + 1)]
+
+    while index < len(text):
+        next_dot = text.find('.', index)
+        next_comma = text.find(',', index)
+        if next_dot <= 0 or next_comma <= 0:
+            break
+        words_to_the_end_of_sentence = text[index:next_dot].count('a')
+        words_to_comma = text[index:next_comma].count('a')
+        if words_to_the_end_of_sentence > MAX_WORDS_IN_SENTENCE or words_to_comma > MAX_WORDS_TO_COMMA:
+            index = next_comma + 1
+            continue
+        if words_to_comma > words_to_the_end_of_sentence:
+            words_to_comma = words_to_the_end_of_sentence
+        prob_comma[words_to_the_end_of_sentence][words_to_comma] += 1
+        index = next_comma + 1
+
+    prob_comma[0][0] = 1
+
+    prob_comma[1][0] = 0
+    prob_comma[1][1] = 1
+
+    prob_comma[2][0] = 0
+    prob_comma[2][1] = 0
+    prob_comma[2][2] = 1
+
+    cumsum_comma = [prob_normalize(prob_comma[i][:i + 1]) for i in range(MAX_WORDS_IN_SENTENCE + 1)]
+
+    output_model['prob_dot'] = cumsum_dot
+    output_model['prob_comma'] = cumsum_comma
+
+
+def train_language(lang_code, model_json_file: Path):
+    global epoch_offset
+    header(f'Training language: {lang_code}')
+    epoch_offset = 0
+    lang = get_lang_config(lang_code)
     model = train_basic_model(lang)
     letter_to_embedding = adjust_letter_embeddings(model)
     model = train_direct_model(model, letter_to_embedding)
-    quantize_model(model, letter_to_embedding)
+    output_model = quantize_model(model, letter_to_embedding)
+    punctuation_stats(lang, output_model)
+    model_json_file.parent.mkdir(parents=True, exist_ok=True)
+    model_json_file.write_text(json.dumps(output_model))
+
+def generate_files(model_json_file: Path):
+    output_model = json.loads(model_json_file.read_text())
+    format_c(output_model, model_json_file)
+
+def main():
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Train neural network models for different languages')
+    parser.add_argument('languages', nargs='*', help='List of language codes to train (default: all available languages)')
+    parser.add_argument('-g', '--gen-only', action='store_true', help='Do not train, only generate output files from previously trained models saved in JSON files.')
+
+    args = parser.parse_args()
+
+    # Determine which languages to process
+    lang_list = args.languages if args.languages else get_languages()
+    
+    for lang_code in lang_list:
+        model_json_file = Path(__file__).parent.parent / f"models/{lang_code}.json"
+        if not args.gen_only:
+            train_language(lang_code, model_json_file)
+        generate_files(model_json_file)
+
 
 if __name__ == '__main__':
     main()

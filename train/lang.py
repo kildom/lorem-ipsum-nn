@@ -23,18 +23,18 @@ class LangConfig:
 
 def get_languages() -> list[str]:
     directory = Path(__file__).parent
-    lang_files = directory.glob("lang-*.py")
+    lang_files = directory.glob("lang_*.py")
 
     languages = []
     for file in lang_files:
-        lang_code = file.stem.replace("lang-", "")
+        lang_code = file.stem.replace("lang_", "")
         languages.append(lang_code)
 
     return sorted(languages)
 
 
 def get_lang_config(language_code: str) -> LangConfig:
-    filepath = Path(__file__).parent / f"lang-{language_code}.py"
+    filepath = Path(__file__).parent / f"lang_{language_code}.py"
 
     if not filepath.is_file():
         raise FileNotFoundError(f"No such language configuration file: {filepath}")
