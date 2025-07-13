@@ -1,40 +1,25 @@
-import os
-import random
-import sys
-import re
 import torch
 import torch.nn as nn
-import numpy as np
 import torch.optim as optim
-from pathlib import Path
 from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import Dataset, DataLoader, random_split
 from tqdm import tqdm
-from sklearn.metrics import confusion_matrix, precision_score, recall_score, f1_score
-from datasets import load_dataset
-from pprint import pprint
 from datetime import datetime
-import torch.nn.functional as F
-from data_loader import load_text
-from model import LatinSharedNet, LETTERS_PER_CONTEXT, ALPHABET_LENGTH, LETTER_TO_INDEX, INDEX_TO_LETTER, DEFAULT_TEMP
 
 
-LEARNING_RATE = 3e-4
+DEFAULT_LEARNING_RATE = 1e-3
 BATCH_SIZE = 64
 DEFAULT_EPOCHS = 20
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def train(model: nn.Module, dataset: Dataset, epochs=DEFAULT_EPOCHS, epoch_callback=None):
-    print(f"Train using device: {DEVICE}")
+def train(model: nn.Module, dataset: Dataset, epochs=DEFAULT_EPOCHS, lr=DEFAULT_LEARNING_RATE, epoch_callback=None, epoch_offset=0):
     train_size = int(0.9 * len(dataset))
     val_size = len(dataset) - train_size
     train_ds, val_ds = random_split(dataset, [train_size, val_size])
     train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True)
     val_loader = DataLoader(val_ds, batch_size=BATCH_SIZE)
 
-    model = model.to(DEVICE)
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    optimizer = optim.Adam(model.parameters(), lr=lr)
     criterion = nn.CrossEntropyLoss()
 
     # TensorBoard setup
@@ -55,8 +40,6 @@ def train(model: nn.Module, dataset: Dataset, epochs=DEFAULT_EPOCHS, epoch_callb
                 progress_bar.update(progress_value - progress_old)
                 progress_old = progress_value
 
-            x, y = x.to(DEVICE), y.to(DEVICE)
-
             logits = model(x)
             loss = criterion(logits, y)
 
@@ -68,7 +51,9 @@ def train(model: nn.Module, dataset: Dataset, epochs=DEFAULT_EPOCHS, epoch_callb
             correct += (logits.argmax(dim=1) == y).sum().item()
 
         acc = correct / train_size
-        print(f"Epoch {epoch+1} - Train Loss: {total_loss/train_size:.4f}, Acc: {acc:.4f}")
+        progress_bar.clear()
+        print(f"Epoch {epoch + 1 + epoch_offset:3d} - Train Loss: {total_loss/train_size:.4f}, Acc: {acc:.4f}")
+        progress_bar.update(0)
 
         # Validation
         model.eval()
@@ -80,22 +65,25 @@ def train(model: nn.Module, dataset: Dataset, epochs=DEFAULT_EPOCHS, epoch_callb
                 if progress_value % 100 == 0:
                     progress_bar.update(progress_value - progress_old)
                     progress_old = progress_value
-                x, y = x.to(DEVICE), y.to(DEVICE)
                 logits = model(x)
                 loss = criterion(logits, y)
                 val_loss += loss.item() * x.size(0)
                 val_correct += (logits.argmax(dim=1) == y).sum().item()
 
         val_acc = val_correct / val_size
-        print(f"           - Val Loss: {val_loss/val_size:.4f}, Acc: {val_acc:.4f}")
+        progress_bar.clear()
+        print(f"          - Val Loss: {val_loss/val_size:.4f}, Acc: {val_acc:.4f}")
+        progress_bar.update(0)
 
-        writer.add_scalars("Loss", {"train": total_loss/train_size, "val": val_loss/val_size}, epoch)
-        writer.add_scalars("Accuracy", {"train": acc, "val": val_acc}, epoch)
+        writer.add_scalars("Loss", {"train": total_loss/train_size, "val": val_loss/val_size}, epoch + epoch_offset)
+        writer.add_scalars("Accuracy", {"train": acc, "val": val_acc}, epoch + epoch_offset)
 
         writer.flush()
 
         if epoch_callback is not None:
+            progress_bar.clear()
             epoch_callback(model, epoch, epochs, total_loss/train_size, val_loss/val_size, acc, val_acc)
+            progress_bar.update(0)
 
     writer.close()
 

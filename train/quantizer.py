@@ -2,8 +2,6 @@
 import torch.nn as nn
 import numpy as np
 import numpy.typing as npt
-from pprint import pprint
-
 
 
 def linear_min_max_weight(matrix: 'npt.NDArray[np.float32]', bias: 'npt.NDArray[np.float32]') -> 'tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]':
