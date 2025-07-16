@@ -28,7 +28,8 @@ class GeneratorSharedNet(nn.Module):
 
         super(GeneratorSharedNet, self).__init__()
 
-        MyReLU = nn.LeakyReLU if useLeakyReLU else nn.ReLU
+        def myReLU():
+            return nn.LeakyReLU(1e-1) if useLeakyReLU else nn.ReLU()
 
         if source_model_or_lang is not None:
             if isinstance(source_model_or_lang, GeneratorSharedNet):
@@ -52,9 +53,10 @@ class GeneratorSharedNet(nn.Module):
             # Shared letter embedding module
             self.letter_embedding = nn.Sequential(
                 nn.Linear(self.lang.ALPHABET_LENGTH, LETTER_EMBEDDING_INTER_SIZE),
-                nn.LeakyReLU(), # this model is not used in final quantized model, so we can use LeakyReLU always
+                nn.LeakyReLU(), # this layer is not used in final quantized model, so we can use LeakyReLU always
+                nn.Dropout(p=0.1),
                 nn.Linear(LETTER_EMBEDDING_INTER_SIZE, LETTER_EMBEDDING_SIZE),
-                nn.LeakyReLU()
+                myReLU()
             )
         else:
             self.letter_embedding = None
@@ -64,10 +66,10 @@ class GeneratorSharedNet(nn.Module):
             sequential_list = []
             if self.layers_conf < GeneratorSharedNet.NO_GROUP_INTER:
                 self.group_inter_linear = nn.Linear(LETTERS_PER_GROUP * LETTER_EMBEDDING_SIZE, GROUP_EMBEDDING_INTER_SIZE)
-                self.group_inter_relu = MyReLU()
-                sequential_list += [self.group_inter_linear, self.group_inter_relu]
+                self.group_inter_relu = myReLU()
+                sequential_list += [self.group_inter_linear, self.group_inter_relu, nn.Dropout(p=0.1)]
             self.group_output_linear = nn.Linear(GROUP_EMBEDDING_INTER_SIZE, GROUP_EMBEDDING_SIZE)
-            self.group_output_relu = MyReLU()
+            self.group_output_relu = myReLU()
             sequential_list += [self.group_output_linear, self.group_output_relu]
             self.group_embedding = nn.Sequential(*sequential_list)
 
@@ -75,8 +77,8 @@ class GeneratorSharedNet(nn.Module):
         sequential_list = []
         if self.layers_conf < GeneratorSharedNet.NO_HEAD_INTER:
             self.head_inter_linear = nn.Linear(GROUPS_PER_CONTEXT * GROUP_EMBEDDING_SIZE, HEAD_INTER_SIZE)
-            self.head_inter_relu = MyReLU()
-            sequential_list += [self.head_inter_linear, self.head_inter_relu]
+            self.head_inter_relu = myReLU()
+            sequential_list += [self.head_inter_linear, self.head_inter_relu, nn.Dropout(p=0.1)]
         self.head_output_linear = nn.Linear(HEAD_INTER_SIZE, self.lang.ALPHABET_LENGTH)
         sequential_list += [self.head_output_linear]
         self.head = nn.Sequential(*sequential_list)
@@ -109,6 +111,35 @@ class GeneratorSharedNet(nn.Module):
         if flat_input:
             y = y.view(-1)  # Flatten to [ALPHABET_LENGTH] if input was 1D
         return y
+
+    def forward_with_tracking(self, x):
+        flat_input = (len(x.shape) == 1)
+        if flat_input:
+            x = x.view(1, -1)
+        batch_size = x.size(0)
+        if self.letter_embedding is not None:
+            x = x.view(batch_size, LETTERS_PER_CONTEXT, self.lang.ALPHABET_LENGTH)  # [Batch, Letter, Alphabet]
+            x = self.letter_embedding(x)  # [Batch, Letter, Letter_embedding]
+        self.tr_group_input = x.view(-1)
+        if self.group_embedding is not None:
+            x = x.view(batch_size, GROUPS_PER_CONTEXT, -1)  # [Batch, Group, ...]
+            if self.layers_conf < GeneratorSharedNet.NO_GROUP_INTER:
+                x = self.group_inter_linear(x)
+                x = self.group_inter_relu(x)
+                self.tr_group_inter = x.view(-1)
+            x = self.group_output_linear(x)
+            x = self.group_output_relu(x)
+            self.tr_group_output = x.view(-1)
+        x = x.view(batch_size, -1)  # [Batch, ...]
+        if self.layers_conf < GeneratorSharedNet.NO_HEAD_INTER:
+            x = self.head_inter_linear(x)
+            x = self.head_inter_relu(x)
+            self.tr_head_inter = x.view(-1)
+        x = self.head_output_linear(x)
+        self.tr_head_output = x.view(-1)
+        if flat_input:
+            x = x.view(-1)  # Flatten to [ALPHABET_LENGTH] if input was 1D
+        return x
 
     def get_letter_embedding(self):
         input = torch.zeros(self.lang.ALPHABET_LENGTH * self.lang.ALPHABET_LENGTH, dtype=torch.float32)

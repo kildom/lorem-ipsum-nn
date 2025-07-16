@@ -13,7 +13,7 @@ from pprint import pprint
 from pathlib import Path
 from dataset import TextDataset
 from model import GROUPS_PER_CONTEXT, GeneratorSharedNet, LETTER_EMBEDDING_SIZE, LETTER_EMBEDDING_INTER_SIZE, LETTERS_PER_GROUP
-from quantizer import QuantizedLinear, QuantizedReLU
+from quantizer3 import QuantizedLinear, QuantizedReLU, quantize_linear
 from train import train, DEFAULT_EPOCHS, DEFAULT_LEARNING_RATE
 from lang import LangConfig, get_lang_config, get_languages
 from format_c import format_c
@@ -46,27 +46,37 @@ def random_probs(probs, rand=None):
 def train_basic_model(lang: LangConfig):
     global epoch_offset
     BASIC_MODEL_PATH = Path(__file__).parent.parent / f"data/{lang.CODE}/basic-model.pt"
+    LEAKY_RELU_MODEL_PATH = Path(__file__).parent.parent / f"data/{lang.CODE}/leaky-relu-model.pt"
+
     def train_callback(model, *_):
         with torch.no_grad():
             emb = model.get_letter_embedding().detach().cpu().numpy()
             max_values = np.max(emb, axis=0)
             print("          - Letter embeddings max values:  ", max_values)
+
     if BASIC_MODEL_PATH.exists():
         header(f'Loading basic model {BASIC_MODEL_PATH}')
         model = GeneratorSharedNet(lang, GeneratorSharedNet.ALL, False)
         model.load_state_dict(torch.load(BASIC_MODEL_PATH))
         return model
 
-    header('Training basic model with leaky ReLU')
-    model = GeneratorSharedNet(lang, GeneratorSharedNet.ALL, True)
     data = TextDataset(lang)
-    train(model, data, DEFAULT_EPOCHS, DEFAULT_LEARNING_RATE, train_callback, epoch_offset=epoch_offset)
-    epoch_offset += DEFAULT_EPOCHS
+    if LEAKY_RELU_MODEL_PATH.exists():
+        header(f'Loading leaky ReLU model {LEAKY_RELU_MODEL_PATH}')
+        model = GeneratorSharedNet(lang, GeneratorSharedNet.ALL, True)
+        model.load_state_dict(torch.load(LEAKY_RELU_MODEL_PATH))
+    else:
+        header('Training basic model with leaky ReLU')
+        model = GeneratorSharedNet(lang, GeneratorSharedNet.ALL, True)
+        train(model, data, DEFAULT_EPOCHS // 2, DEFAULT_LEARNING_RATE, train_callback, epoch_offset=epoch_offset)
+        epoch_offset += DEFAULT_EPOCHS // 2
+        LEAKY_RELU_MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(model.state_dict(), LEAKY_RELU_MODEL_PATH)
 
     header('Re-training basic model with normal ReLU')
     model = GeneratorSharedNet(model, GeneratorSharedNet.ALL, False)
-    train(model, data, DEFAULT_EPOCHS // 2, DEFAULT_LEARNING_RATE, train_callback, epoch_offset=epoch_offset)
-    epoch_offset += DEFAULT_EPOCHS // 2
+    train(model, data, DEFAULT_EPOCHS, DEFAULT_LEARNING_RATE, train_callback, epoch_offset=epoch_offset, skip_first_train=True)
+    epoch_offset += DEFAULT_EPOCHS
     BASIC_MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
     torch.save(model.state_dict(), BASIC_MODEL_PATH)
     return model
@@ -81,49 +91,11 @@ def adjust_linear_input(linear_layer: nn.Linear, factors: npt.NDArray[np.int32])
 
 def adjust_letter_embeddings(model: GeneratorSharedNet):
     header('Adjusting letter embeddings')
-    LETTER_EMBEDDINGS_FILE = Path(__file__).parent.parent / f"data/{model.lang.CODE}/letter-embeddings.json"
-
-    with torch.no_grad():
-
-        def get_max_letter_embedding():
-            emb = model.get_letter_embedding().detach().cpu().numpy()
-            return np.max(emb, axis=0)
-
-        # === Adjust weight and bias of linear layers, so letter embeddings are in range [0, 254]
-
-        # Calculate needed adjustment
-        max_values = get_max_letter_embedding()
-        print("Max values:  ", max_values)
-        assert min(max_values) > 0, "Embeddings values should be greater than 0."
-        letter_feature_adjustments = 255 / max_values
-        print("Adjustments: ", letter_feature_adjustments)
-        # Adjust the weight and bias of the letter embedding output layer
-        for i in range(LETTER_EMBEDDING_SIZE):
-            model.letter_embedding[2].bias[i] *= letter_feature_adjustments[i]
-            for j in range(LETTER_EMBEDDING_INTER_SIZE):
-                model.letter_embedding[2].weight[i][j] *= letter_feature_adjustments[i]
-        # Adjust the weight of the group embedding input layer
-        adjust_linear_input(model.group_embedding[0], letter_feature_adjustments)
-        # Check the adjustments
-        max_values = get_max_letter_embedding()
-        print("Adjusted max values:  ", max_values)
-        assert min(max_values) > 254.5
-        assert max(max_values) < 255.5
-        # Print and save final embeddings for each letter
-        letter_to_embedding = [[]] * model.lang.ALPHABET_LENGTH
-        emb = model.get_letter_embedding().detach().cpu().numpy()
-        for i in range(model.lang.ALPHABET_LENGTH):
-            vect = [max(0, int(round(float(x)))) for x in emb[i]]
-            #print(f"{i:2d} {model.lang.INDEX_TO_LETTER[i]}: {vect}")
-            letter_to_embedding[i] = vect
-
-        LETTER_EMBEDDINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        LETTER_EMBEDDINGS_FILE.write_text(json.dumps({
-            'alphabet': model.lang.ALPHABET,
-            'embedding': letter_to_embedding,
-        }))
-
-        return letter_to_embedding
+    letter_embedding_precise = model.get_letter_embedding().detach().cpu().numpy()
+    max_letter_embedding = np.max(letter_embedding_precise, axis=0)
+    letter_factors = 255 / max_letter_embedding
+    letter_embedding = np.round(letter_embedding_precise * letter_factors) / letter_factors
+    return letter_embedding, letter_factors
 
 
 def train_direct_model(model, letter_to_embedding):
@@ -137,14 +109,14 @@ def train_direct_model(model, letter_to_embedding):
     header('Training direct model')
     new_model = GeneratorSharedNet(model, GeneratorSharedNet.NO_LETTER, False)
     data = TextDataset(model.lang, letter_to_embedding)
-    train(new_model, data, 4, DEFAULT_LEARNING_RATE / 2, epoch_offset=epoch_offset)
-    epoch_offset += 4
+    train(new_model, data, 5, DEFAULT_LEARNING_RATE / 2, epoch_offset=epoch_offset, skip_first_train=True)
+    epoch_offset += 5
     DIRECT_MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
     torch.save(new_model.state_dict(), DIRECT_MODEL_PATH)
     return new_model
 
 
-def quantize_model(model: GeneratorSharedNet, letter_to_embedding):
+def quantize_model(model: GeneratorSharedNet, letter_to_embedding: npt.NDArray[np.float32], letter_embedding_factors: npt.NDArray[np.float32]):
     global epoch_offset
 
     header('Quantize Model')
@@ -153,18 +125,23 @@ def quantize_model(model: GeneratorSharedNet, letter_to_embedding):
     print('Quantize group_inter_linear layer')
 
     def postprocess1(xx):
-        x: 'npt.NDArray[np.float32]' = xx.detach().numpy().astype(np.int32)
+        x: 'npt.NDArray[np.float32]' = xx.detach().numpy()
         y = []
         for i in range(GROUPS_PER_CONTEXT):
             group_x = x[i * LETTERS_PER_GROUP * LETTER_EMBEDDING_SIZE:(i + 1) * LETTERS_PER_GROUP * LETTER_EMBEDDING_SIZE]
-            group_y = relu(group_inter_linear(group_x)).astype(np.float32)
+            group_x *= factors_for_group
+            #group_x = np.round(group_x).astype(np.int32)
+            group_y, group_sh = relu(*group_inter_linear(group_x, 0))
+            group_y = group_y.astype(np.float32)
+            assert group_sh == 0
             group_y /= group_inter_linear.factors
             y.append(group_y)
         return torch.from_numpy(np.concatenate(y).astype(np.float32))
 
     model.eval()
     with torch.no_grad():
-        group_inter_linear = QuantizedLinear(model.group_inter_linear, np.array([0, 255], dtype=np.int32))
+        factors_for_group = np.concatenate([letter_embedding_factors] * (model.group_inter_linear.in_features // len(letter_embedding_factors)))
+        group_inter_linear = quantize_linear(model.group_inter_linear, factors_for_group)
     REDUCED_MODEL_PATH = Path(__file__).parent.parent / f"data/{model.lang.CODE}/reduced-model-no-group-inter.pt"
     if REDUCED_MODEL_PATH.exists():
         reduced_model = GeneratorSharedNet(model, GeneratorSharedNet.NO_GROUP_INTER, False).eval()
@@ -172,30 +149,30 @@ def quantize_model(model: GeneratorSharedNet, letter_to_embedding):
     else:
         reduced_model = GeneratorSharedNet(model, GeneratorSharedNet.NO_GROUP_INTER, False).eval()
         data = TextDataset(model.lang, letter_to_embedding, postprocess1)
-        train(reduced_model, data, 2, DEFAULT_LEARNING_RATE / 2, epoch_offset=epoch_offset)
-        epoch_offset += 2
+        train(reduced_model, data, 5, DEFAULT_LEARNING_RATE, epoch_offset=epoch_offset, skip_first_train=True)
+        epoch_offset += 5
         torch.save(reduced_model.state_dict(), REDUCED_MODEL_PATH)
 
     print('Quantize group_output_linear layer')
 
     def postprocess2(xx):
-        x: 'npt.NDArray[np.float32]' = xx.detach().numpy().astype(np.int32)
+        x: 'npt.NDArray[np.float32]' = xx.detach().numpy()
         y = []
         for i in range(GROUPS_PER_CONTEXT):
             group_x = x[i * LETTERS_PER_GROUP * LETTER_EMBEDDING_SIZE:(i + 1) * LETTERS_PER_GROUP * LETTER_EMBEDDING_SIZE]
-            group_y = relu(group_inter_linear(group_x))
-            group_y = relu(group_output_linear(group_y))
+            group_x *= factors_for_group
+            #group_x = np.round(group_x).astype(np.int32)
+            group_y, group_sh = relu(*group_inter_linear(group_x, 0))
+            group_y, group_sh = relu(*group_output_linear(group_y, group_sh))
             group_y = group_y.astype(np.float32)
+            assert group_sh == 0
             group_y /= group_output_linear.factors
             y.append(group_y)
         return torch.from_numpy(np.concatenate(y).astype(np.float32))
 
     model.eval()
     with torch.no_grad():
-        adjust_linear_input(reduced_model.group_output_linear, group_inter_linear.factors)
-        values_range = group_inter_linear.output_range.copy()
-        values_range[:, 0] = 0
-        group_output_linear = QuantizedLinear(reduced_model.group_output_linear, values_range)
+        group_output_linear = quantize_linear(reduced_model.group_output_linear, group_inter_linear.factors)
     REDUCED_MODEL_PATH = Path(__file__).parent.parent / f"data/{model.lang.CODE}/reduced-model-no-group.pt"
     if REDUCED_MODEL_PATH.exists():
         reduced_model = GeneratorSharedNet(reduced_model.lang, GeneratorSharedNet.NO_GROUP, False).eval()
@@ -203,32 +180,32 @@ def quantize_model(model: GeneratorSharedNet, letter_to_embedding):
     else:
         reduced_model = GeneratorSharedNet(reduced_model, GeneratorSharedNet.NO_GROUP, False).eval()
         data = TextDataset(model.lang, letter_to_embedding, postprocess2)
-        train(reduced_model, data, 2, DEFAULT_LEARNING_RATE / 2, epoch_offset=epoch_offset)
-        epoch_offset += 2
+        train(reduced_model, data, 5, DEFAULT_LEARNING_RATE, epoch_offset=epoch_offset, skip_first_train=True)
+        epoch_offset += 5
         torch.save(reduced_model.state_dict(), REDUCED_MODEL_PATH)
 
     print('Quantize head_inter_linear layer')
 
     def postprocess3(xx):
-        x: 'npt.NDArray[np.float32]' = xx.detach().numpy().astype(np.int32)
+        x: 'npt.NDArray[np.float32]' = xx.detach().numpy()
         y = []
         for i in range(GROUPS_PER_CONTEXT):
             group_x = x[i * LETTERS_PER_GROUP * LETTER_EMBEDDING_SIZE:(i + 1) * LETTERS_PER_GROUP * LETTER_EMBEDDING_SIZE]
-            group_y = relu(group_inter_linear(group_x))
-            group_y = relu(group_output_linear(group_y))
+            group_x *= factors_for_group
+            #group_x = np.round(group_x).astype(np.int32)
+            group_y, group_sh = relu(*group_inter_linear(group_x, 0))
+            group_y, group_sh = relu(*group_output_linear(group_y, group_sh))
+            group_y = group_y.astype(np.float32)
+            assert group_sh == 0
             y.append(group_y)
         y = np.concatenate(y)
-        y = relu(head_inter_linear(y)).astype(np.float32)
-        y /= head_inter_linear.factors
+        y, head_sh = relu(*head_inter_linear(y, group_sh))
+        y = y / head_inter_linear.factors * (1 << head_sh)
         return torch.from_numpy(y.astype(np.float32))
 
     model.eval()
     with torch.no_grad():
-        adjust_linear_input(reduced_model.head_inter_linear, group_output_linear.factors)
-        values_range = np.concatenate([group_output_linear.output_range.copy()] * GROUPS_PER_CONTEXT)
-        values_range[:, 0] = 0
-        head_inter_linear = QuantizedLinear(reduced_model.head_inter_linear, values_range)
-
+        head_inter_linear = quantize_linear(reduced_model.head_inter_linear, np.concatenate([group_output_linear.factors] * GROUPS_PER_CONTEXT))
     REDUCED_MODEL_PATH = Path(__file__).parent.parent / f"data/{model.lang.CODE}/reduced-model-no-head-inter.pt"
     if REDUCED_MODEL_PATH.exists():
         reduced_model = GeneratorSharedNet(reduced_model.lang, GeneratorSharedNet.NO_HEAD_INTER, False).eval()
@@ -236,18 +213,17 @@ def quantize_model(model: GeneratorSharedNet, letter_to_embedding):
     else:
         reduced_model = GeneratorSharedNet(reduced_model, GeneratorSharedNet.NO_HEAD_INTER, False).eval()
         data = TextDataset(model.lang, letter_to_embedding, postprocess3)
-        train(reduced_model, data, 2, DEFAULT_LEARNING_RATE / 2, epoch_offset=epoch_offset)
-        epoch_offset += 2
+        train(reduced_model, data, 5, DEFAULT_LEARNING_RATE, epoch_offset=epoch_offset, skip_first_train=True)
+        epoch_offset += 5
         torch.save(reduced_model.state_dict(), REDUCED_MODEL_PATH)
 
     print('Quantize head_output_linear layer')
 
     model.eval()
     with torch.no_grad():
-        adjust_linear_input(reduced_model.head_output_linear, head_inter_linear.factors)
-        values_range = head_inter_linear.output_range.copy()
-        values_range[:, 0] = 0
-        head_output_linear = QuantizedLinear(reduced_model.head_output_linear, values_range)
+        head_output_linear = quantize_linear(reduced_model.head_output_linear, head_inter_linear.factors)
+
+    return
 
     print('Quantize output postprocessing')
 
@@ -434,12 +410,12 @@ def train_language(lang_code, model_json_file: Path):
     epoch_offset = 0
     lang = get_lang_config(lang_code)
     model = train_basic_model(lang)
-    letter_to_embedding = adjust_letter_embeddings(model)
+    letter_to_embedding, letter_embedding_factors = adjust_letter_embeddings(model)
     model = train_direct_model(model, letter_to_embedding)
-    output_model = quantize_model(model, letter_to_embedding)
-    punctuation_stats(lang, output_model)
-    model_json_file.parent.mkdir(parents=True, exist_ok=True)
-    model_json_file.write_text(json.dumps(output_model))
+    #output_model = quantize_model(model, letter_to_embedding, letter_embedding_factors)
+    # punctuation_stats(lang, output_model)
+    # model_json_file.parent.mkdir(parents=True, exist_ok=True)
+    # model_json_file.write_text(json.dumps(output_model))
 
 def generate_files(model_json_file: Path):
     output_model = json.loads(model_json_file.read_text())

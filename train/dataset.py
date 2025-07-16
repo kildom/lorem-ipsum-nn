@@ -4,12 +4,13 @@ import numpy as np
 import random
 import torch
 from torch.utils.data import Dataset
+from tqdm import tqdm
 from lang import LangConfig
 from model import LETTERS_PER_CONTEXT, LETTER_EMBEDDING_SIZE
 
 
 LIMIT_DATASET = 2300000
-LIMIT_DATASET = LIMIT_DATASET // 50 # Uncomment for fast testing
+LIMIT_DATASET = LIMIT_DATASET // 10 # Uncomment for fast testing
 LIMIT_PADDED_DATASET = LIMIT_DATASET // 20
 
 
@@ -28,11 +29,26 @@ class TextDataset(Dataset):
         self.space_positions = list(map(lambda x: x[0], filter(lambda x: (x[1] == ' ') and (x[0] < max_text_length), enumerate(self.text))))
         random.shuffle(self.space_positions)
         self.space_length = min(len(self.space_positions), LIMIT_PADDED_DATASET)
+        self.preload()
+    
+    def preload(self):
+        item, target = self.preload_item(0)
+        assert len(item.shape) == 1
+        item_size = item.shape[0]
+        self.data_items = torch.zeros(len(self), item_size, dtype=torch.float32)
+        self.data_target = []
+        for i in tqdm(range(len(self)), total=len(self), desc='Preloading dataset'):
+            item, target = self.preload_item(i)
+            self.data_items[i] = item
+            self.data_target.append(target)
 
     def __len__(self):
         return self.text_length + self.space_length
 
     def __getitem__(self, i):
+        return self.data_items[i], self.data_target[i]
+
+    def preload_item(self, i):
         if self.letter_to_embedding is not None:
             result = torch.zeros(LETTERS_PER_CONTEXT * LETTER_EMBEDDING_SIZE, dtype=torch.float32)
         else:

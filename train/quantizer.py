@@ -169,6 +169,22 @@ class QuantizedLinear(SimpleQuantizedModel):
         })
         return result
 
+    @staticmethod
+    def load(layers: list[dict]) -> 'SimpleQuantizedModel|None':
+        if len(layers) >= 2 and layers[0]['type'] == 'bit_shift' and layers[1]['type'] == 'linear':
+            input_shifts = np.array(layers[0]['value'], dtype=np.int32)
+            layers.pop(0)
+        else:
+            input_shifts = None
+        if layers[0]['type'] != 'linear':
+            return None
+        weight = np.array(layers[0]['weight'], dtype=np.int32)
+        bias = np.array(layers[0]['bias'], dtype=np.int32)
+        layers.pop(0)
+        if input_shifts is None:
+            input_shifts = np.zeros(weight.shape[1], dtype=np.int32)
+        return QuantizedLinear(weight, bias, input_shifts)
+
 
 class QuantizedReLU(SimpleQuantizedModel):
 
@@ -180,6 +196,13 @@ class QuantizedReLU(SimpleQuantizedModel):
             'type': 'relu'
         }]
 
+    @staticmethod
+    def load(layers: list[dict]) -> 'SimpleQuantizedModel|None':
+        if layers[0]['type'] != 'relu':
+            return None
+        layers.pop(0)
+        return QuantizedReLU()
+
 
 class QuantizedSequential(SimpleQuantizedModel):
 
@@ -190,3 +213,18 @@ class QuantizedSequential(SimpleQuantizedModel):
         for model in self.models:
             x = model(x)
         return x
+
+    @staticmethod
+    def load(layers: list[dict]) -> 'SimpleQuantizedModel|None':
+        models = []
+        while len(layers) > 0:
+            m = QuantizedReLU.load(layers)
+            if m is not None:
+                models.append(m)
+                continue
+            m = QuantizedLinear.load(layers)
+            if m is not None:
+                models.append(m)
+                continue
+            raise ValueError(f"Unknown layer type: {layer['type']}")
+        return QuantizedSequential(*models)
