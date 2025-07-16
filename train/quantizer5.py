@@ -41,18 +41,13 @@ class QuantizedLinear(SimpleQuantizedModel):
         return y
 
     def store(self) -> 'list[dict]':
-        result = []
-        if np.max(self.input_shifts) > 0:
-            result.append({
-                'type': 'bit_shift',
-                'value': self.input_shifts.tolist()
-            })
-        result.append({
+        return [{
             'type': 'linear',
             'weight': self.weight.tolist(),
-            'bias': self.bias.tolist()
-        })
-        return result
+            'bias': self.bias.tolist(),
+            'input_shift': self.input_shift.tolist(),
+            'input_clamp': self.input_clamp.tolist(),
+        }]
 
     @staticmethod
     def load(layers: list[dict]) -> 'SimpleQuantizedModel|None':
@@ -256,6 +251,13 @@ class QuantizedScaledSoftmax(SimpleQuantizedModel):
             else:
                 x[i] = 0
         return x >> 9
+
+    def store(self) -> 'list[dict]':
+        return [{
+            'type': 'scaled_softmax',
+            'weight': self.weight.tolist(),
+            'frac_bits': self.frac_bits,
+        }]
 
 def quantize_scaled_softmax(scale_int_bits: int, scale_frac_bits: int, input_factors: 'npt.NDArray[np.float64]') -> QuantizedScaledSoftmax:
     input_bits = 32

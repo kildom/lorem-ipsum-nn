@@ -1,6 +1,8 @@
 
+import random
 import torch
 import torch.nn as nn
+from pathlib import Path
 from lang import LangConfig
 
 
@@ -12,6 +14,21 @@ LETTER_EMBEDDING_SIZE = 3
 GROUP_EMBEDDING_INTER_SIZE = 16
 GROUP_EMBEDDING_SIZE = 6
 HEAD_INTER_SIZE = 16
+
+
+class RandomActivation(nn.Module):
+    def __init__(self, negative_slope=0.01):
+        super(RandomActivation, self).__init__()
+        self.relu = nn.ReLU()
+        self.leaky_relu = nn.LeakyReLU(negative_slope)
+
+    def forward(self, x):
+        if not self.training:
+            return self.relu(x)
+        elif random.random() < 0.5:
+            return self.relu(x)
+        else:
+            return self.leaky_relu(x)
 
 
 class GeneratorSharedNet(nn.Module):
@@ -29,7 +46,9 @@ class GeneratorSharedNet(nn.Module):
         super(GeneratorSharedNet, self).__init__()
 
         def myReLU():
-            return nn.LeakyReLU(1e-1) if useLeakyReLU else nn.ReLU()
+            #return nn.LeakyReLU(1/128) if useLeakyReLU else nn.ReLU()
+            #return nn.ReLU()
+            return RandomActivation(1/128)
 
         if source_model_or_lang is not None:
             if isinstance(source_model_or_lang, GeneratorSharedNet):
@@ -54,9 +73,10 @@ class GeneratorSharedNet(nn.Module):
             self.letter_embedding = nn.Sequential(
                 nn.Linear(self.lang.ALPHABET_LENGTH, LETTER_EMBEDDING_INTER_SIZE),
                 nn.LeakyReLU(), # this layer is not used in final quantized model, so we can use LeakyReLU always
-                nn.Dropout(p=0.1),
+                nn.Dropout(p=0.01),
                 nn.Linear(LETTER_EMBEDDING_INTER_SIZE, LETTER_EMBEDDING_SIZE),
-                myReLU()
+                myReLU(),
+                nn.Dropout(p=0.01),
             )
         else:
             self.letter_embedding = None
@@ -67,10 +87,10 @@ class GeneratorSharedNet(nn.Module):
             if self.layers_conf < GeneratorSharedNet.NO_GROUP_INTER:
                 self.group_inter_linear = nn.Linear(LETTERS_PER_GROUP * LETTER_EMBEDDING_SIZE, GROUP_EMBEDDING_INTER_SIZE)
                 self.group_inter_relu = myReLU()
-                sequential_list += [self.group_inter_linear, self.group_inter_relu, nn.Dropout(p=0.1)]
+                sequential_list += [self.group_inter_linear, self.group_inter_relu, nn.Dropout(p=0.01)]
             self.group_output_linear = nn.Linear(GROUP_EMBEDDING_INTER_SIZE, GROUP_EMBEDDING_SIZE)
             self.group_output_relu = myReLU()
-            sequential_list += [self.group_output_linear, self.group_output_relu]
+            sequential_list += [self.group_output_linear, self.group_output_relu, nn.Dropout(p=0.01)]
             self.group_embedding = nn.Sequential(*sequential_list)
 
         # Final classification head
@@ -78,7 +98,7 @@ class GeneratorSharedNet(nn.Module):
         if self.layers_conf < GeneratorSharedNet.NO_HEAD_INTER:
             self.head_inter_linear = nn.Linear(GROUPS_PER_CONTEXT * GROUP_EMBEDDING_SIZE, HEAD_INTER_SIZE)
             self.head_inter_relu = myReLU()
-            sequential_list += [self.head_inter_linear, self.head_inter_relu, nn.Dropout(p=0.1)]
+            sequential_list += [self.head_inter_linear, self.head_inter_relu, nn.Dropout(p=0.01)]
         self.head_output_linear = nn.Linear(HEAD_INTER_SIZE, self.lang.ALPHABET_LENGTH)
         sequential_list += [self.head_output_linear]
         self.head = nn.Sequential(*sequential_list)
@@ -94,6 +114,20 @@ class GeneratorSharedNet(nn.Module):
             if self.head_inter_linear is not None and source_model_or_lang.head_inter_linear is not None:
                 self.head_inter_linear.load_state_dict(source_model_or_lang.head_inter_linear.state_dict())
             self.head_output_linear.load_state_dict(source_model_or_lang.head_output_linear.state_dict())
+
+
+    def init_weights(self):
+        self.apply(self._init_weights_callback)
+        return self
+
+
+    def _init_weights_callback(self, m):
+        if isinstance(m, nn.Linear):
+            print(f"Initializing weights for {m}")
+            torch.nn.init.kaiming_uniform_(m.weight, nonlinearity='relu')
+            if m.bias is not None:
+                torch.nn.init.zeros_(m.bias)
+
 
     def forward(self, x):
         flat_input = (len(x.shape) == 1)
@@ -149,3 +183,10 @@ class GeneratorSharedNet(nn.Module):
         letter_embeddings = self.letter_embedding(input)
         return letter_embeddings.view(self.lang.ALPHABET_LENGTH, LETTER_EMBEDDING_SIZE)
 
+    def load(self, file):
+        self.load_state_dict(torch.load(file))
+        return self
+
+    def save(self, file):
+        torch.save(self.state_dict(), file)
+        return self

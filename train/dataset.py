@@ -9,8 +9,8 @@ from lang import LangConfig
 from model import LETTERS_PER_CONTEXT, LETTER_EMBEDDING_SIZE
 
 
-LIMIT_DATASET = 2300000
-LIMIT_DATASET = LIMIT_DATASET // 10 # Uncomment for fast testing
+LIMIT_DATASET = 2000000
+#LIMIT_DATASET = LIMIT_DATASET // 5 # Uncomment for fast testing
 LIMIT_PADDED_DATASET = LIMIT_DATASET // 20
 
 
