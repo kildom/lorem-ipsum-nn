@@ -27,7 +27,7 @@ def download_text():
 
 
 class LangPl:
-    CODE = 'pl'
+
     ALPHABET = 'aąbcćdeęfghijklłmnńoóprsśtuwyzźż'
 
     @staticmethod

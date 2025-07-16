@@ -24,16 +24,16 @@ def download_text():
     return text
 
 
-class LangEn:
+# The language configuration class. It must start with "Lang".
 
-    # Language code
-    CODE = 'en'
+class LangEn:
 
     # Language alphabet, generated text will also use space, comma, and period that are not included here.
     ALPHABET = 'abcdefghijklmnopqrstuvwxyz'
 
     # Returns a training text. The string must contains only characters from
     # the alphabet (lower or upper case), space, comma, and period.
+    # 1 MB of text is enough for training. The training script will truncate it to 2 MB if longer.
     @staticmethod
     def get_text():
         if CACHE_FILE.exists():

@@ -15,7 +15,7 @@ from pathlib import Path
 from tqdm import tqdm
 from dataset import TextDataset
 from model import GROUPS_PER_CONTEXT, LETTERS_PER_CONTEXT, GeneratorSharedNet, LETTER_EMBEDDING_SIZE, LETTER_EMBEDDING_INTER_SIZE, LETTERS_PER_GROUP
-from quantizer5 import QuantizedReLU, quantize_linear, quantize_scaled_softmax
+from quantizer import QuantizedReLU, quantize_linear, quantize_scaled_softmax
 from train import train, DEFAULT_EPOCHS, DEFAULT_LEARNING_RATE
 from lang import LangConfig, get_lang_config, get_languages
 from format_c import format_c

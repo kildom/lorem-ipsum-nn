@@ -9,9 +9,9 @@ class LangConfig:
     INDEX_TO_LETTER: list[str]
     LETTER_TO_INDEX: dict[str, int]
 
-    def __init__(self, parent):
+    def __init__(self, parent, language_code):
         self.parent = parent
-        self.CODE = parent.CODE
+        self.CODE = language_code
         self.ALPHABET = ' ' + parent.ALPHABET
         self.ALPHABET_LENGTH = len(self.ALPHABET)
         self.INDEX_TO_LETTER = [i for i in self.ALPHABET]
@@ -47,6 +47,6 @@ def get_lang_config(language_code: str) -> LangConfig:
         if attr_name.startswith("Lang"):
             attr = getattr(module, attr_name)
             if isinstance(attr, type):
-                return LangConfig(attr)
+                return LangConfig(attr, language_code)
 
     raise ImportError(f"No class starting with 'Lang' found in {filepath.name}")
