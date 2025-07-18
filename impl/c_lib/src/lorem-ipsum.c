@@ -15,13 +15,22 @@
 
 
 #define MIN_LAST_SENTENCE_LETTERS 20
+#define MIN_LAST_PARAGRAPH_LETTERS 80
 
 #define FLAG_GENERATE_SPACE (1 << 0)
 #define FLAG_GENERATE_UPPER (1 << 1)
 
+static const int32_t EXP_TABLE[4][8] = {
+    { 512, 1392, 3783, 10284, 27954, 75988, 206556, 561476 },
+    { 512, 580, 657, 745, 844, 957, 1084, 1228 },
+    { 512, 520, 528, 537, 545, 554, 562, 571 },
+    { 512, 513, 514, 515, 516, 517, 518, 519 },
+};
+
 static const LoremIpsumModel *const models[] = { LOREM_IPSUM_MODELS };
 static const char *const dot_string = ".";
 static const char *const comma_string = ",";
+static const char *const new_line_string = "\n";
 static const char* models_names[LOREM_IPSUM_MODELS_COUNT + 1] = { NULL };
 
 static void reset_context(LoremIpsum* ipsum);
@@ -30,6 +39,7 @@ static int32_t generate_letter(LoremIpsum* ipsum, int32_t remaining_characters);
 static void update_context(LoremIpsum* ipsum, int32_t letter_index);
 static int32_t get_punctuation_prob(const uint8_t* prob, int32_t words_since_dot, int32_t words_since_comma);
 static int32_t find_letter_index(const char* const* letters, uint32_t letters_count, const char** text);
+static uint32_t normal_dist(int32_t mean, int32_t variance, int32_t x);
 
 
 #ifdef _VSCODE_
@@ -76,6 +86,7 @@ bool lorem_ipsum_init(LoremIpsum* ipsum, const char* language, uint32_t heat_per
 
     lorem_ipsum_set_seed(ipsum, seed);
     lorem_ipsum_set_heat(ipsum, heat_percent);
+    lorem_ipsum_set_paragraphs(ipsum, LOREM_IPSUM_PARAGRAPHS_DISABLE, 0, 0, NULL);
     reset_context(ipsum);
 
     return (ver <= 1);
@@ -100,7 +111,7 @@ size_t lorem_ipsum_generate(LoremIpsum* ipsum, char* buffer, size_t buffer_size)
             if (next_char[2]) {
                 buffer[2] = next_char[2];
                 if (next_char[3]) {
-                    buffer[3] = next_char[3];
+                    buffer[3] = next_char[3]; // TODO: paragraph separator may be longer!
                 }
             }
         }
@@ -129,6 +140,20 @@ const char* lorem_ipsum_next(LoremIpsum* ipsum, size_t remaining_characters)
         return dot_string;
     } else if (ipsum->s.flags & FLAG_GENERATE_SPACE) {
         ipsum->s.flags &= ~FLAG_GENERATE_SPACE;
+        if (ipsum->s.flags & FLAG_GENERATE_UPPER) {
+            ipsum->s.sentences_in_paragraph++;
+            if (ipsum->s.sentences_in_paragraph > (int32_t)sizeof(ipsum->s.paragraph_prob_table)) {
+                ipsum->s.sentences_in_paragraph = sizeof(ipsum->s.paragraph_prob_table);
+            }
+            if (remaining_characters > MIN_LAST_PARAGRAPH_LETTERS) {
+                uint32_t prob = ipsum->s.paragraph_prob_table[ipsum->s.sentences_in_paragraph - 1];
+                uint32_t rand = rand_lcg(ipsum) % 255;
+                if (rand < prob) {
+                    ipsum->s.sentences_in_paragraph = 0;
+                    return ipsum->t.paragraph_separator;
+                }
+            }
+        }
         return ipsum->t.model->lower_letters[0];
     }
 
@@ -146,7 +171,7 @@ const char* lorem_ipsum_next(LoremIpsum* ipsum, size_t remaining_characters)
         }
         if (remaining_characters > MIN_LAST_SENTENCE_LETTERS) {
             int32_t prob = get_punctuation_prob(ipsum->t.model->prob_dot, ipsum->s.words_since_dot, ipsum->s.words_since_comma);
-            int32_t rand = rand_lcg(ipsum) & 0xFF;
+            int32_t rand = (rand_lcg(ipsum) >> 16) & 0xFF;
             if (rand < prob) {
                 ipsum->s.flags |= FLAG_GENERATE_SPACE | FLAG_GENERATE_UPPER;
                 ipsum->s.words_since_dot = 0;
@@ -154,7 +179,7 @@ const char* lorem_ipsum_next(LoremIpsum* ipsum, size_t remaining_characters)
                 return dot_string;
             }
             prob = get_punctuation_prob(ipsum->t.model->prob_comma, ipsum->s.words_since_dot, ipsum->s.words_since_comma);
-            rand = rand_lcg(ipsum) & 0xFF;
+            rand = (rand_lcg(ipsum) >> 16) & 0xFF;
             if (rand < prob) {
                 ipsum->s.flags |= FLAG_GENERATE_SPACE;
                 ipsum->s.words_since_comma = 0;
@@ -182,7 +207,10 @@ void lorem_ipsum_set_context(LoremIpsum* ipsum, const char* context_text)
         return; // Just reset the generator state
     }
 
+    size_t paragraph_separator_length = strlen(ipsum->t.paragraph_separator);
+
     while (*context_text) {
+        bool is_paragraph_separator = (strncmp(context_text, ipsum->t.paragraph_separator, paragraph_separator_length) == 0);
         if (*context_text == '.') {
             ipsum->s.words_since_dot = 0;
             ipsum->s.words_since_comma = 0;
@@ -195,13 +223,19 @@ void lorem_ipsum_set_context(LoremIpsum* ipsum, const char* context_text)
             ipsum->s.flags |= FLAG_GENERATE_SPACE;
             update_context(ipsum, 0);
             context_text++;
-        } else if (*context_text == ' ') {
+        } else if (*context_text == ' ' || is_paragraph_separator) {
             if (!(ipsum->s.flags & FLAG_GENERATE_SPACE)) {
                 ipsum->s.words_since_dot++;
                 ipsum->s.words_since_comma++;
                 update_context(ipsum, 0);
             } else {
                 ipsum->s.flags &= ~FLAG_GENERATE_SPACE;
+                if (ipsum->s.flags & FLAG_GENERATE_UPPER) {
+                    ipsum->s.sentences_in_paragraph++;
+                    if (is_paragraph_separator) {
+                        ipsum->s.sentences_in_paragraph = 0;
+                    }
+                }
             }
             context_text++;
         } else {
@@ -215,6 +249,41 @@ void lorem_ipsum_set_context(LoremIpsum* ipsum, const char* context_text)
             } else {
                 context_text++;
             }
+        }
+    }
+}
+
+
+void lorem_ipsum_set_paragraphs(LoremIpsum* ipsum, int32_t mean, int32_t shorter_variance, int32_t longer_variance, const char* separator)
+{
+    int i;
+    uint8_t* table = ipsum->s.paragraph_prob_table;
+    int32_t sum = 0;
+    ipsum->t.paragraph_separator = separator ? separator : new_line_string;
+    if (mean == LOREM_IPSUM_PARAGRAPHS_DISABLE) {
+        memset(table, 0, sizeof(ipsum->s.paragraph_prob_table));
+        return;
+    }
+    if (mean == LOREM_IPSUM_PARAGRAPHS_DEFAULT) {
+        mean = 50;
+        shorter_variance = 20;
+        longer_variance = 40;
+    }
+    if (shorter_variance <= 0) {
+        shorter_variance = 1;
+    }
+    if (longer_variance <= 0) {
+        longer_variance = 1;
+    }
+    table[sizeof(ipsum->s.paragraph_prob_table) - 1] = 255;
+    for (i = sizeof(ipsum->s.paragraph_prob_table) - 2; i >= 0; i--) {
+        int32_t x = 10 * (i + 1);
+        int32_t prob_ind = normal_dist(mean, (x <= mean) ? shorter_variance : longer_variance, x);
+        sum += prob_ind;
+        if (sum > 0) {
+            table[i] = (prob_ind * 255) / sum;
+        } else {
+            table[i] = 255;
         }
     }
 }
@@ -281,13 +350,6 @@ static bool execute_relu(const LoremIpsumReLU* layer, void* vinput)
 
 static bool execute_scaled_softmax(LoremIpsum* ipsum, const LoremIpsumScaledSoftmax* layer, void* vinput, void* voutput)
 {
-    static const int32_t EXP_TABLE[4][8] = {
-        { 512, 1392, 3783, 10284, 27954, 75988, 206556, 561476 },
-        { 512, 580, 657, 745, 844, 957, 1084, 1228 },
-        { 512, 520, 528, 537, 545, 554, 562, 571 },
-        { 512, 513, 514, 515, 516, 517, 518, 519 },
-    };
-
     uint32_t i;
     uint32_t input_size = layer->input_size;
     int32_t* input = (int32_t*)vinput;
@@ -363,8 +425,8 @@ static void* execute_nn(LoremIpsum* ipsum, const void* const* layers)
 static uint32_t rand_lcg(LoremIpsum* ipsum)
 {
     uint32_t result = ipsum->s.rand_state;
-    ipsum->s.rand_state = (uint32_t)1664525 * result + (uint32_t)1013904223;
-    return result >> 1;
+    ipsum->s.rand_state = 1664525u * result + 1013904223u;
+    return result >> 8;
 }
 
 static uint32_t random_from_cumsum(LoremIpsum* ipsum, int32_t* cumsum, uint32_t count)
@@ -457,6 +519,7 @@ static void reset_context(LoremIpsum* ipsum)
     ipsum->s.flags = FLAG_GENERATE_UPPER;
     ipsum->s.words_since_dot = 0;
     ipsum->s.words_since_comma = 0;
+    ipsum->s.sentences_in_paragraph = 0;
 }
 
 
@@ -520,6 +583,23 @@ static int32_t find_letter_index(const char* const* letters, uint32_t letters_co
         }
     }
     return -1;
+}
+
+
+static uint32_t normal_dist(int32_t mean, int32_t variance, int32_t x)
+{
+    x = x - mean;
+    if (x < 0) x = -x;
+    int32_t exp = 4095 - x * x * (1 << 9) / (10 * 2 * variance);
+    if (exp >= 0) {
+        uint32_t y = EXP_TABLE[0][(exp >> 9) & 0x7];
+        y = (y * EXP_TABLE[1][(exp >> 6) & 0x7]) >> 9;
+        y = (y * EXP_TABLE[2][(exp >> 3) & 0x7]) >> 9;
+        y = (y * EXP_TABLE[3][(exp >> 0) & 0x7]) >> (9 + 9);
+        return y;
+    } else {
+        return 0;
+    }
 }
 
 

@@ -8,6 +8,9 @@
 #include "lorem-ipsum-int.h"
 #include "lorem-ipsum-models.h"
 
+#define LOREM_IPSUM_PARAGRAPHS_DISABLE (-0x7FFFFFFF)
+#define LOREM_IPSUM_PARAGRAPHS_DEFAULT (-0x7FFFFFFE)
+
 
 /** @brief Lorem Ipsum generator structure.
  *
@@ -30,9 +33,12 @@ typedef struct LoremIpsum
         int32_t flags;
         int32_t words_since_dot;
         int32_t words_since_comma;
+        int32_t sentences_in_paragraph;
+        uint8_t paragraph_prob_table[64];
     } s;
     struct {
         const struct LoremIpsumModel* model;
+        const char* paragraph_separator;
         int64_t vector_buffer0[LOREM_IPSUM_ALPHABET_MAX_SIZE > 16 ? LOREM_IPSUM_ALPHABET_MAX_SIZE : 16];
         int64_t vector_buffer1[LOREM_IPSUM_ALPHABET_MAX_SIZE > 16 ? LOREM_IPSUM_ALPHABET_MAX_SIZE : 16];
     } t;
@@ -129,6 +135,35 @@ static inline void lorem_ipsum_set_seed(LoremIpsum* ipsum, uint32_t seed);
  *        See `lorem_ipsum_init()` for more details.
  */
 void lorem_ipsum_set_heat(LoremIpsum* ipsum, uint32_t heat_percent);
+
+
+/** @brief Sets the paragraph generation parameters.
+ *
+ * The paragraphs are separated by a '\n' character.
+ *
+ * By default, paragraphs generation is disabled. This function enables it and sets parameters.
+ * To disable it again, call this function with `mean` set to `LOREM_IPSUM_PARAGRAPHS_DISABLE`.
+ * 
+ * Paragraph length (in sentences) distribution is based on normal distribution.
+ * The distribution is centered around `mean` value and it can be asymmetric.
+ * For paragraphs shorter than `mean`, it uses `shorter_variance`.
+ * For paragraphs longer than `mean`, it uses `longer_variance`.
+ *
+ * All parameters are in 1/10 of a sentence, so 10 is 1 sentence, 20 is 2 sentences, etc.
+ *
+ * @param ipsum Pointer to the LoremIpsum structure.
+ * @param mean Mean length of paragraphs (in 1/10 of a sentence),
+ *             or `LOREM_IPSUM_PARAGRAPHS_DISABLE` to disable paragraph generation,
+ *             or `LOREM_IPSUM_PARAGRAPHS_DEFAULT` to use default values which are:
+ *             50 for mean, 20 for shorter_variance, and 40 for longer_variance.
+ *             If you want to use default values, pass `LOREM_IPSUM_PARAGRAPHS_DEFAULT`.
+ * @param shorter_variance Variance for shorter paragraphs (in 1/10 of a sentence).
+ * @param separator Paragraph separator string. It is not copied, so it must be valid
+ *                  as long as paragraphs are generated. NULL for default separator
+ *                  which is "\n" character.
+ * @param longer_variance Variance for longer paragraphs (in 1/10 of a sentence).
+ */
+void lorem_ipsum_set_paragraphs(LoremIpsum* ipsum, int32_t mean, int32_t shorter_variance, int32_t longer_variance, const char* separator);
 
 
 /** @brief Returns pointer to the internal state buffer.

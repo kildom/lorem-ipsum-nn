@@ -12,7 +12,7 @@
 
 static const char usage_text[] = "\n"
     "\n"
-    "USAGE: %s [OPTIONS] [TEXT_LENGTH] [LANG]\n"
+    "USAGE: %s [TEXT_LENGTH] [LANG] [OPTIONS]\n"
     "\n"
     "Options:\n"
     "\n"
@@ -38,6 +38,22 @@ static const char usage_text[] = "\n"
     "\n"
     "  -p, --prefix [NUM]  Prefix the text with original Lorem Ipsum passage.\n"
     "                      The NUM is the number of words (default: 5).\n"
+    "\n"
+    "  -ps, --paragraph-separator SEPARATOR\n"
+    "                      Enable paragraphs with the specified SEPARATOR.\n"
+    "                      You can use escape sequences: \\\\ \\r \\n \\xNN\n"
+    "\n"
+    "  -pm, --paragraph-mean MEAN\n"
+    "  -psv, --paragraph-shorter-variance VARIANCE\n"
+    "  -plv, --paragraph-longer-variance VARIANCE\n"
+    "                      Enable paragraphs with the specified parameters.\n"
+    "                      Parameters are expressed in number of sentences.\n"
+    "                      You can use fractions with precision of '0.1'.\n"
+    "                      The probability of a paragraph length is modeled using\n"
+    "                      normal distribution with the specified MEAN.\n"
+    "                      The distribution is asymmetric with different VARIANCE\n"
+    "                      for paragraphs shorter than the mean and paragraphs\n"
+    "                      longer than the mean.\n"
     "\n"
     "  -l, --languages     List available language stylizations and exit.\n"
     "\n"
@@ -134,6 +150,8 @@ int main(int argc, char* argv[]) {
                 }
                 printf("\n");
                 return 0;
+            } else if (strcmp(arg, "") == 0) {
+                // Skip options separator "--"
             } else {
                 fprintf(stderr, "Error: Unknown option '%s'.\n", argv[i]);
                 usage(argv[0], 13);
