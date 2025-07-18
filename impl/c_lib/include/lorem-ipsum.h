@@ -111,7 +111,7 @@ const char* lorem_ipsum_next(LoremIpsum* ipsum, size_t remaining_characters);
  * @param context_text Pointer to the text that will be used as a new context.
  *                     It can be NULL, in which case it will just reset generator state.
  */
-void lorem_ipsum_set_context(LoremIpsum* ipsum, char* context_text);
+void lorem_ipsum_set_context(LoremIpsum* ipsum, const char* context_text);
 
 
 /** @brief Sets the seed for the pseudo random number generator.
@@ -137,9 +137,10 @@ void lorem_ipsum_set_heat(LoremIpsum* ipsum, uint32_t heat_percent);
  * Later, you can restore it on initialized generator by writing back to that buffer.
  * After restoring, you can continue generating text from the same state.
  *
- * @param ipsum     Pointer to the LoremIpsum structure.
- * @param[out] size Pointer to a variable that will receive the size of the state buffer,
- *                  or NULL, if you don't need the size.
+ * @param ipsum Pointer to the LoremIpsum structure.
+ * @param size  Pointer to a variable that will receive the size of the state buffer,
+ *              or NULL, if you don't need the size.
+ * @return Pointer to the internal state buffer.
  */
 static inline void* lorem_ipsum_get_state_buffer(LoremIpsum* ipsum, uint32_t* size);
 

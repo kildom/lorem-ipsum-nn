@@ -2,14 +2,14 @@
 CC ?= gcc
 
 # Compiler flags
-CFLAGS = -Wall -Wextra -std=c99 -O3 -Wno-unused-parameter
+CFLAGS = -Wall -Wextra -std=c99 -O3
 DEPFLAGS = -MMD -MP
 
 # Include directories
 INCLUDES = -I. -I../../models -I../c_lib/include
 
 # Build directory
-BUILDDIR = ../../build/c_cli
+BUILDDIR = ../../build/cli
 
 # Source directories
 SRCDIR = .
