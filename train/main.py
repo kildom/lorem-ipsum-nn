@@ -14,7 +14,7 @@ from pathlib import Path
 
 from tqdm import tqdm
 from dataset import TextDataset
-from model import GROUPS_PER_CONTEXT, LETTERS_PER_CONTEXT, GeneratorSharedNet, LETTER_EMBEDDING_SIZE, LETTER_EMBEDDING_INTER_SIZE, LETTERS_PER_GROUP
+from model import GROUP_EMBEDDING_INTER_SIZE, GROUP_EMBEDDING_SIZE, GROUPS_PER_CONTEXT, HEAD_INTER_SIZE, LETTERS_PER_CONTEXT, GeneratorSharedNet, LETTER_EMBEDDING_SIZE, LETTER_EMBEDDING_INTER_SIZE, LETTERS_PER_GROUP
 from quantizer import QuantizedReLU, quantize_linear, quantize_scaled_softmax
 from train import train, DEFAULT_EPOCHS, DEFAULT_LEARNING_RATE
 from lang import LangConfig, get_lang_config, get_languages
@@ -256,8 +256,8 @@ def quantize_model(model: GeneratorSharedNet, letter_to_embedding: npt.NDArray[n
         'lang': model.lang.CODE,
         'letters': ''.join(model.lang.LETTER_TO_INDEX.keys()),
         'letters_embedding': np.round(letter_to_embedding * letter_embedding_factors).tolist(),
-        'group': group_inter_linear.store() + relu.store() + group_output_linear.store() + relu.store(),
-        'head': head_inter_linear.store() + relu.store() + head_output_linear.store() + head_softmax.store(),
+        'group': group_inter_linear.store() + relu.store(GROUP_EMBEDDING_INTER_SIZE) + group_output_linear.store() + relu.store(GROUP_EMBEDDING_SIZE),
+        'head': head_inter_linear.store() + relu.store(HEAD_INTER_SIZE) + head_output_linear.store() + head_softmax.store(),
     }
 
     return output_model
@@ -266,82 +266,68 @@ def quantize_model(model: GeneratorSharedNet, letter_to_embedding: npt.NDArray[n
 def punctuation_stats(lang: LangConfig, output_model: dict):
     header('Calculating punctuation statistics')
 
-    def prob_normalize(probabilities, total=9999):
-        sum_prob = sum(probabilities)
-        probabilities = [x / sum_prob * total for x in probabilities]
-        int_prob = [int(round(x)) for x in probabilities]
-        while sum(int_prob) > total:
-            diff = [probabilities[i] - int_prob[i] for i in range(len(probabilities))]
-            min_diff = min(diff)
-            index = diff.index(min_diff)
-            assert int_prob[index] > 0
-            int_prob[index] -= 1
-        while sum(int_prob) < total:
-            diff = [probabilities[i] - int_prob[i] for i in range(len(probabilities))]
-            max_diff = max(diff)
-            index = diff.index(max_diff)
-            int_prob[index] += 1
-        cumulative_sum = [sum(int_prob[:i + 1]) for i in range(len(int_prob))]
-        return cumulative_sum
-
     text = lang.get_text()
+    text = text[1:4000000]
     text = re.sub(r"\s+", ' ', text)
     text = re.sub(r"[\s,.]*\.[\s,.]*", '.', text)
     text = re.sub(r"[\s,]*,[\s,]*", ',', text)
     text = re.sub(r'\s*\w+\s*', 'a', text)
+    text = re.sub(r'\.(?:a,?){41,}', '', text)
+    text = re.sub(r'\.[^.]*a{21}[a,]*', '', text)
+    if text[-1] != '.':
+        text += '.'
+    text = re.sub(r'\.a(?=\.)', '', text)
 
-    index = 0
-    prob_dot = [0] * (MAX_WORDS_IN_SENTENCE + 1)
-    max_words = 0
+    hit_dot = np.zeros((41, 21), dtype=np.int64)
+    hit_comma = np.zeros(hit_dot.shape, dtype=np.int64)
+    total = np.zeros(hit_dot.shape, dtype=np.int64)
 
-    while index < len(text):
-        next_dot = text.find('.', index)
-        if next_dot <= 0:
-            break
-        words = text[index:next_dot].count('a')
-        if words > MAX_WORDS_IN_SENTENCE:
-            index = next_dot + 1
-            continue
-        max_words = max(max_words, words)
-        prob_dot[words] += 1
-        index = next_dot + 1
+    words_since_dot = 0
+    words_since_comma = 0
+    for i in range(1, len(text)):
+        c = text[i]
+        if c == '.':
+            hit_dot[words_since_dot][words_since_comma] += 1
+            words_since_dot = 0
+            words_since_comma = 0
+        elif c == ',':
+            hit_comma[words_since_dot][words_since_comma] += 1
+            words_since_comma = 0
+        else:
+            words_since_dot += 1
+            words_since_comma += 1
+            assert words_since_dot < 41 and words_since_comma < 21
+            total[words_since_dot][words_since_comma] += 1
 
-    prob_dot[0] = 0
-    prob_dot[1] = 0
-    cumsum_dot = prob_normalize(prob_dot)
+    hit_dot = hit_dot[1:, 1:]
+    hit_comma = hit_comma[1:, 1:]
+    total = total[1:, 1:]
 
-    index = 0
+    # If some case does not occur, assume that there is a dot (for safety)
+    zeros = (total == 0).astype(np.int64)
+    hit_dot = hit_dot * (1 - zeros) + zeros
+    total = total + zeros
+    # Export probabilities as uint8
+    prob_dot = np.round(np.maximum(0, hit_dot.astype(np.float64) / total.astype(np.float64) * 256 - 1)).astype(np.int32)
+    # Limit number of allowed words by setting 100% probability for edge of the array
+    prob_dot[-1] = 255
 
-    prob_comma = [[0] * (MAX_WORDS_TO_COMMA + 1) for _ in range(MAX_WORDS_IN_SENTENCE + 1)]
+    # If in some case there is a dot for sure, then assume 100% probability of comma just in case
+    dot_for_sure = (hit_dot >= total).astype(np.int64)
+    # Export probabilities as uint8
+    prob_comma = np.round(np.maximum(0, np.maximum(dot_for_sure, hit_comma).astype(np.float64) / np.maximum(dot_for_sure, total - hit_dot).astype(np.float64) * 256 - 1)).astype(np.int32)
+    # Limit number of allowed words by setting 100% probability for edges of the array
+    prob_comma[-1] = 255
+    prob_comma[:,-1] = 255
 
-    while index < len(text):
-        next_dot = text.find('.', index)
-        next_comma = text.find(',', index)
-        if next_dot <= 0 or next_comma <= 0:
-            break
-        words_to_the_end_of_sentence = text[index:next_dot].count('a')
-        words_to_comma = text[index:next_comma].count('a')
-        if words_to_the_end_of_sentence > MAX_WORDS_IN_SENTENCE or words_to_comma > MAX_WORDS_TO_COMMA:
-            index = next_comma + 1
-            continue
-        if words_to_comma > words_to_the_end_of_sentence:
-            words_to_comma = words_to_the_end_of_sentence
-        prob_comma[words_to_the_end_of_sentence][words_to_comma] += 1
-        index = next_comma + 1
+    prob_dot = prob_dot.tolist()
+    prob_comma = prob_comma.tolist()
+    for i in range(len(prob_dot)):
+        prob_dot[i] = prob_dot[i][:i + 1]
+        prob_comma[i] = prob_comma[i][:i + 1]
 
-    prob_comma[0][0] = 1
-
-    prob_comma[1][0] = 0
-    prob_comma[1][1] = 1
-
-    prob_comma[2][0] = 0
-    prob_comma[2][1] = 0
-    prob_comma[2][2] = 1
-
-    cumsum_comma = [prob_normalize(prob_comma[i][:i + 1]) for i in range(MAX_WORDS_IN_SENTENCE + 1)]
-
-    output_model['prob_dot'] = cumsum_dot
-    output_model['prob_comma'] = cumsum_comma
+    output_model['prob_dot'] = prob_dot
+    output_model['prob_comma'] = prob_comma
 
 
 def train_language(lang_code, model_json_file: Path):
@@ -377,7 +363,7 @@ def main():
         model_json_file = Path(__file__).parent.parent / f"models/{lang_code}.json"
         if not args.gen_only:
             train_language(lang_code, model_json_file)
-        #generate_files(model_json_file)
+        generate_files(model_json_file)
 
 
 if __name__ == '__main__':

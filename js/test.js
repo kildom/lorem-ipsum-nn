@@ -69,6 +69,7 @@ function evalModel(layers, input, softmax_scale) {
                         max_x = value[i];
                     }
                 }
+                //console.log('SoftMax value:', value, softmax_scale);
                 let range_top = (8n << BigInt(layer.frac_bits)) - 1n;
                 for (let i = 0; i < value.length; i++) {
                     let x = value[i] - max_x + range_top;
@@ -78,7 +79,7 @@ function evalModel(layers, input, softmax_scale) {
                         y = EXP_TABLE[0][(x >>> 9) & 7];
                         y = (y * EXP_TABLE[1][(x >>> 6) & 7]) >>> 9;
                         y = (y * EXP_TABLE[2][(x >>> 3) & 7]) >>> 9;
-                        y = (y * EXP_TABLE[3][x & 7]) >>> 9;
+                        y = (y * EXP_TABLE[3][x & 7]) >>> (9 + 9);
                     } else {
                         y = 0;
                     }
@@ -95,9 +96,26 @@ function evalModel(layers, input, softmax_scale) {
 
 }
 
-function random_from_cumsum(probs) {
+function createLCG(seed) {
+    if (seed === undefined) {
+        seed = Math.floor(Math.random() * 0x100000000);
+    }
+    seed >>>= 0;
+    return function next(newSeed) {
+        let ret = seed >>> 1;
+        if (newSeed !== undefined) {
+            seed = newSeed >>> 0;
+        } else {
+            seed = (Math.imul(1664525, seed) + 1013904223) >>> 0;
+        }
+        //console.log(`LCG: ${seed}`);
+        return ret;
+    };
+}
+
+function random_from_cumsum(probs, randFunc) {
     let maxValue = probs.at(-1);
-    let rand = Math.floor(Math.random() * maxValue);
+    let rand = randFunc() % maxValue;
     let start = 0;
     let end = probs.length;
     while (start < end) {
@@ -108,8 +126,9 @@ function random_from_cumsum(probs) {
             start = mid + 1;
         }
     }
-    return start
+    return start;
 }
+
 
 const LETTERS_PER_GROUP = 4;
 const GROUPS_PER_CONTEXT = 3;
@@ -118,14 +137,15 @@ const LETTER_EMBEDDING_SIZE = 3;
 
 class Generator {
 
-    constructor(modelData) {
+    constructor(modelData, rand) {
         this.modelData = modelData;
         let heat = 60;
-        this.invHeatScale = Math.round(1600 / heat);
+        this.invHeatScale = Math.floor(1600 / heat);
         this.letterEmbedding = strToEmbedding(' '.repeat(LETTERS_PER_GROUP));
         let emptyGroupEmb = evalModel(modelData.group, this.letterEmbedding);
         this.groupHistory = new Array(LETTERS_PER_CONTEXT - LETTERS_PER_GROUP).fill(emptyGroupEmb);
         this.contextText = ' '.repeat(2 * LETTERS_PER_CONTEXT);
+        this.rand = rand;
     }
 
     generateNextLetter(remaining) {
@@ -133,12 +153,16 @@ class Generator {
         for (let i = 0; i < this.groupHistory.length; i += LETTERS_PER_GROUP) {
             g.push(...this.groupHistory[i]);
         }
+        //console.log("Group input:", this.letterEmbedding);
         let currentGroup = evalModel(modelData.group, this.letterEmbedding);
+        //console.log("Group output:", currentGroup);
         this.groupHistory.shift();
         this.groupHistory.push(currentGroup);
         g.push(...currentGroup);
 
+        //console.log("Head input:", g);
         let prob = evalModel(modelData.head, g, this.invHeatScale);
+        //console.log("Head output:", prob);
         let prob_cumsum = new Array(prob.length);
         let cumsum = 0;
         for (let i = 0; i < prob.length; i++) {
@@ -162,9 +186,10 @@ class Generator {
                 break;
             }
             cumsum += value;
+            //console.log(`${modelData.letters[i]} ${value}`);
             prob_cumsum[i] = cumsum;
         }
-        let letterIndex = random_from_cumsum(prob_cumsum);
+        let letterIndex = random_from_cumsum(prob_cumsum, this.rand);
         if (letterIndex >= modelData.letters.length) {
             letterIndex = 1;
         }
@@ -173,16 +198,26 @@ class Generator {
         this.contextText = this.contextText.slice(1) + modelData.letters[letterIndex];
         return modelData.letters[letterIndex];
     }
+
 }
+
+g = new Generator(modelData, createLCG(0));
+let tt = '';
+for (let i = 0; i < 100; i++) {
+    tt += g.generateNextLetter(100);
+}
+console.log(tt);
+process.exit();
 
 MIN_LAST_SENTENCE_LETTERS = 20;
 
-let gen = new Generator(modelData);
+let rand = createLCG(0);
+let gen = new Generator(modelData, rand);
 let remaining = 200000;
 let text = '';
 let beginningOfSentence = true;
-let nextDot = random_from_cumsum(modelData.prob_dot);
-let nextComma = random_from_cumsum(modelData.prob_comma[nextDot]);
+let nextDot = random_from_cumsum(modelData.prob_dot, rand);
+let nextComma = random_from_cumsum(modelData.prob_comma[nextDot], rand);
 remaining--;
 let t = Date.now();
 while (remaining > 0) {
@@ -196,13 +231,13 @@ while (remaining > 0) {
         nextDot--;
         nextComma--;
         if (nextDot === 0 && remaining > MIN_LAST_SENTENCE_LETTERS) {
-            nextDot = random_from_cumsum(modelData.prob_dot);
-            nextComma = random_from_cumsum(modelData.prob_comma[nextDot]);
+            nextDot = random_from_cumsum(modelData.prob_dot, rand);
+            nextComma = random_from_cumsum(modelData.prob_comma[nextDot], rand);
             beginningOfSentence = true;
             text += '. ';
             remaining--;
         } else if (nextComma === 0 && remaining > MIN_LAST_SENTENCE_LETTERS) {
-            nextComma = random_from_cumsum(modelData.prob_comma[nextDot]);
+            nextComma = random_from_cumsum(modelData.prob_comma[nextDot], rand);
             text += ', ';
             remaining--;
         } else {

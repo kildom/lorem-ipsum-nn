@@ -1,11 +1,11 @@
 
 import re
 from pathlib import Path
-
-from lang import get_languages
+from textwrap import dedent
+from lang import get_lang_config, get_languages
 
 def c_str(s: str) -> str:
-    literal = re.match(r'^[ a-z]+$', s)
+    literal = re.match(r'^[ a-zA-Z]+$', s)
     if literal:
         return s
     else:
@@ -14,14 +14,17 @@ def c_str(s: str) -> str:
 
 def format_matrix(value: list[list[int]], second_dim=False) -> str:
     if second_dim:
-        return "{\n    { " + " },\n    { ".join(', '.join((str(m) for m in n)) for n in value) + " },\n}"
+        return "{\n            { " + " },\n            { ".join(', '.join((str(int(m)) for m in n)) for n in value) + " },\n        }"
     else:
-        return "{\n    " + ",\n    ".join(', '.join((str(m) for m in n)) for n in value) + ",\n}"
+        return "{\n            " + ",\n            ".join(', '.join((str(int(m)) for m in n)) for n in value) + ",\n        }"
+
+def transpose(value: list[list[int]]) -> list[list[int]]:
+    return [list(row) for row in zip(*value)]
 
 def format_vector(value: list[int]) -> str:
-    return "{\n    " + ", ".join(str(n) for n in value) + ",\n}"
+    return "{\n            " + ", ".join(str(int(n)) for n in value) + ",\n        }"
 
-def format_layer(layer: dict, name: str) -> str:
+def format_layer(layer: dict, id: str, name: str) -> str:
     global_scope = ''
     local_scope = ''
     if layer['type'] == 'relu':
@@ -46,74 +49,152 @@ def format_layer(layer: dict, name: str) -> str:
     global_scope += local_scope
     return global_scope
 
-def format_nn(nn: list[dict], name: str) -> str:
-    global_scope = ''
-    local_scope = ''
-    local_scope += f'static const void* const {name} = {{\n'
-    for i, layer in enumerate(nn):
-        layer_name = f"{name}_{i}_{layer['type']}"
-        global_scope += format_layer(layer, layer_name)
-        local_scope += f'    (const void*)&{layer_name},\n'
-    local_scope += f'}};\n\n'
-    global_scope += local_scope
-    return global_scope
+nl = '\n'
+sl = '\\'
+
+
+def format_linear(layer: dict, id: str, name: str) -> str:
+    return f'''
+        static const int8_t {id}{name}_weight[] = {format_matrix(layer["weight"])};
+
+        static const int32_t {id}{name}_bias[] = {format_vector(layer["bias"])};
+
+        static const uint8_t {id}{name}_input_shift[] = {format_vector(layer["input_shift"])};
+
+        static const int32_t {id}{name}_input_clamp[][2] = {format_matrix(transpose(layer["input_clamp"]), 2)};
+
+        static const struct LoremIpsumLinear {id}{name} = {{
+            .type = LOREM_IPSUM_LAYER_LINEAR,
+            .weight = {id}{name}_weight,
+            .bias = {id}{name}_bias,
+            .input_shift = {id}{name}_input_shift,
+            .input_clamp = {id}{name}_input_clamp,
+            .input_size = {len(layer["weight"][0])},
+            .output_size = {len(layer["weight"])},
+        }};
+        '''
+
+def format_relu(layer: dict, id: str, name: str) -> str:
+    return f'''
+        static const struct LoremIpsumReLU {id}{name} = {{
+            .type = LOREM_IPSUM_LAYER_RELU,
+            .input_size = {layer['input_size']},
+        }};
+        '''
+
+def format_scaled_softmax(layer: dict, id: str, name: str) -> str:
+    return f'''
+        static const int32_t {id}{name}_weight[] = {format_vector(layer["weight"])};
+
+        static const struct LoremIpsumScaledSoftmax {id}{name} = {{
+            .type = LOREM_IPSUM_LAYER_SCALED_SOFTMAX,
+            .weight = {id}{name}_weight,
+            .frac_bits = {layer["frac_bits"]},
+            .input_size = {len(layer['weight'])},
+        }};
+        '''
+
+
+def format_nn(nn: list[dict], id: str, name: str) -> str:
+    return f'''
+        {''.join(globals()[f'format_{layer["type"]}'](layer, id, f'{name}_{i}_{layer["type"]}') for i, layer in enumerate(nn))}
+
+        static const void* const {id}{name}[] = {{
+            {f',{nl}            '.join(f'&{id}{name}_{i}_{layer["type"]}' for i, layer in enumerate(nn))},
+            (void*)0,
+        }};
+        '''
+
 
 def format_c(output_model: dict, file: Path):
+
     file = file.with_suffix('.c')
-    global_scope = '#include "lorem-ipsum-int.h"\n\n'
+    id = 'model_' + output_model["lang"] + '_'
 
-    local_scope = f'const struct LoremIpsumModel lorem_ipsum_{output_model["lang"]} = {{\n'
+    text = f'''
+        #include <stdint.h>
+        #include "lorem-ipsum-int.h"
 
-    local_scope += f'    .lang = "{c_str(output_model["lang"])}",\n'
+        static const char* const {id}lower_letters[] = {{
+            {', '.join(f'"{c_str(letter)}"' for letter in output_model['letters'])},
+        }};
 
-    global_scope += f'static const char* const model_letters[] = {{\n    '
-    global_scope += ', '.join(f'"{c_str(letter)}"' for letter in output_model['letters'])
-    global_scope += f',\n}};\n\n'
-    local_scope += f'    .letters = model_letters,\n'
+        static const char* const {id}upper_letters[] = {{
+            {', '.join(f'"{c_str(letter)}"' for letter in output_model['letters'].upper())},
+        }};
 
-    local_scope += f'    .letters_count = {len(output_model["letters"])},\n'
+        static const uint8_t {id}letters_embedding[] = {format_matrix(output_model["letters_embedding"])};
 
-    global_scope += f'static const uint8_t model_letters_embedding[] = {format_matrix(output_model["letters_embedding"])};\n\n'
-    local_scope += f'    .letters_embedding = model_letters_embedding,\n'
-    local_scope += f'    .letter_embedding_length = {len(output_model["letters_embedding"][0])},\n'
+        {format_nn(output_model['group'], id, 'group')}
 
-    global_scope += format_nn(output_model['group'], "model_group")
-    local_scope += f'    .group = model_group,\n'
+        {format_nn(output_model['head'], id, 'head')}
 
-    global_scope += format_nn(output_model['head'], "model_head")
-    local_scope += f'    .head = model_head,\n'
+        static const uint8_t {id}prob_dot[] = {format_matrix(output_model["prob_dot"])};
 
-    global_scope += f'static const int32_t model_output_scale_u0_31[] = {format_vector(output_model["output_scale_u0_31"])};\n\n'
-    local_scope += f'    .output_scale_u0_31 = model_output_scale_u0_31,\n'
-    local_scope += f'    .output_shift = {output_model["output_shift"]},\n'
-    local_scope += f'    .fractional_bits = {output_model["fractional_bits"]},\n'
+        static const uint8_t {id}prob_comma[] = {format_matrix(output_model["prob_comma"])};
 
-    local_scope += f'    .prob_fractional_bits = {output_model["prob_fractional_bits"]},\n'
-    global_scope += f'static const int32_t model_prob_exp_table[][8] = {format_matrix(output_model["prob_exp_table"], True)};\n\n'
-    local_scope += f'    .prob_exp_table = model_prob_exp_table,\n'
-    local_scope += f'    .prob_exp_table_rows = {len(output_model["prob_exp_table"])},\n'
+        const struct LoremIpsumModel lorem_ipsum_{output_model["lang"]} = {{
+            .lang = "{c_str(output_model["lang"])}",
+            .lower_letters = {id}lower_letters,
+            .upper_letters = {id}upper_letters,
+            .letters_count = {len(output_model["letters_embedding"])},
+            .letters_embedding = {id}letters_embedding,
+            .letter_embedding_length = {len(output_model["letters_embedding"][0])},
+            .group = {id}group,
+            .head = {id}head,
+            .prob_dot = {id}prob_dot,
+            .prob_comma = {id}prob_comma,
+        }};
 
-    global_scope += f'static const int32_t model_empty_group_embedding[] = {format_vector(output_model["empty_group_embedding"])};\n\n'
-    local_scope += f'    .empty_group_embedding = model_empty_group_embedding,\n'
+        '''
 
-    global_scope += f'static const uint16_t model_prob_dot[] = {format_vector(output_model["prob_dot"])};\n\n'
-    local_scope += f'    .prob_dot = model_prob_dot,\n'
-    local_scope += f'    .prob_dot_length = {len(output_model["prob_dot"])},\n'
+    text = dedent(text).strip() + '\n'
+    text = re.sub(r'\n\n+', '\n\n', text)
+    file.write_text(text)
 
-    prob_comma = output_model["prob_comma"]
-    max_len = max(len(row) for row in prob_comma)
-    prob_comma = [row + [0] * (max_len - len(row)) for row in prob_comma]
-    global_scope += f'static const uint16_t model_prob_comma[] = {format_matrix(prob_comma)};\n\n'
-    local_scope += f'    .prob_comma = model_prob_comma,\n'
-    local_scope += f'    .prob_comma_length = {max_len},\n'
+    languages = [get_lang_config(id) for id in get_languages()]
+    languages.sort(key=lambda lang: lang.CODE if lang.CODE != 'la' else '')
 
-    local_scope += '};\n\n'
-    global_scope += local_scope
-    file.write_text(global_scope)
+    alphabet_definition = {}
+    last_language = None
+    for lang in languages:
+        if last_language is None:
+            alphabet_definition[lang.CODE] = (len(lang.ALPHABET), 0, 1, 0 )
+        else:
+            alphabet_definition[lang.CODE] = (
+                f'({len(lang.ALPHABET)} > (_LOREM_IPSUM_{last_language.CODE.upper()}_AS) ? {len(lang.ALPHABET)} : (_LOREM_IPSUM_{last_language.CODE.upper()}_AS))',
+                f'_LOREM_IPSUM_{last_language.CODE.upper()}_AS',
+                f'_LOREM_IPSUM_{last_language.CODE.upper()}_CN + 1',
+                f'_LOREM_IPSUM_{last_language.CODE.upper()}_CN',
+            )
+        last_language = lang
+    
+    text = f'''
+        #include "lorem-ipsum-int.h"
 
-    header_scope = '#include "lorem-ipsum-int.h"\n\n'
-    header_scope += f'#define LOREM_IPSUM_MODELS {", ".join(("&lorem_ipsum_" + lang) for lang in get_languages())}\n\n'
-    for lang in get_languages():
-        header_scope += f'extern const struct LoremIpsumModel lorem_ipsum_{lang};\n'
+        #if {" || ".join((f"defined(LOREM_IPSUM_{lang.CODE.upper()}_ENABLED)") for lang in languages)}
+        {f"{nl}        ".join((f"#define LOREM_IPSUM_{lang.CODE.upper()}_DISABLED") for lang in languages)}
+        #endif
+
+        {"".join((f"""
+        #if defined(LOREM_IPSUM_{lang.CODE.upper()}_ENABLED) || !defined(LOREM_IPSUM_{lang.CODE.upper()}_DISABLED)
+        #define LOREM_IPSUM_{lang.CODE.upper()}_INSTANCE &lorem_ipsum_{lang.CODE},
+        #define _LOREM_IPSUM_{lang.CODE.upper()}_AS {alphabet_definition[lang.CODE][0]}
+        #define _LOREM_IPSUM_{lang.CODE.upper()}_CN {alphabet_definition[lang.CODE][2]}
+        extern const struct LoremIpsumModel lorem_ipsum_{lang.CODE};
+        #else
+        #define LOREM_IPSUM_{lang.CODE.upper()}_INSTANCE
+        #define _LOREM_IPSUM_{lang.CODE.upper()}_AS {alphabet_definition[lang.CODE][1]}
+        #define _LOREM_IPSUM_{lang.CODE.upper()}_CN {alphabet_definition[lang.CODE][3]}
+        #endif
+        """) for lang in languages)}
+
+        #define LOREM_IPSUM_MODELS {" ".join((f"LOREM_IPSUM_{lang.CODE.upper()}_INSTANCE") for lang in languages)}
+        #define LOREM_IPSUM_ALPHABET_MAX_SIZE _LOREM_IPSUM_{last_language.CODE.upper()}_AS
+        #define LOREM_IPSUM_MODELS_COUNT (_LOREM_IPSUM_{last_language.CODE.upper()}_CN)
+        '''
+
+    text = dedent(text).strip() + '\n'
+    text = re.sub(r'\n\n+', '\n\n', text)
     header_file = file.parent / 'lorem-ipsum-models.h'
-    header_file.write_text(header_scope)
+    header_file.write_text(text)

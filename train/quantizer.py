@@ -15,9 +15,6 @@ class SimpleQuantizedModel:
     def __call__(self, x: 'npt.NDArray[np.int32]') -> 'npt.NDArray[np.int32]':
         return self.forward(x)
 
-    def store(self) -> 'list[dict]':
-        raise NotImplementedError("Subclasses must implement the store method to save the model state.")
-
 
 class QuantizedLinear(SimpleQuantizedModel):
 
@@ -71,9 +68,10 @@ class QuantizedReLU(SimpleQuantizedModel):
     def forward(self, x: 'npt.NDArray[np.int32]') -> 'npt.NDArray[np.int32]':
         return np.maximum(0, x)
 
-    def store(self) -> 'list[dict]':
+    def store(self, size: int) -> 'list[dict]':
         return [{
-            'type': 'relu'
+            'type': 'relu',
+            'input_size': size,
         }]
 
     @staticmethod
