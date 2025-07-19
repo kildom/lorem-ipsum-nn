@@ -11,53 +11,64 @@
 
 
 static const char usage_text[] = "\n"
-    "\n"
     "USAGE: %s [TEXT_LENGTH] [LANG] [OPTIONS]\n"
     "\n"
     "Options:\n"
     "\n"
-    "  [TEXT_LENGTH]       Specify the length of the generated text in characters\n"
-    "                      (default: 200). The text is written in UTF-8, so for\n"
-    "                      non-ASCII alphabet, number of bytes may be greater.\n"
+    "  [TEXT_LENGTH]\n"
+    "                Specify the length of the generated text in characters\n"
+    "                (default: 200). For non-ASCII alphabet or multi-byte paragraph\n"
+    "                separator, number of bytes may be greater.\n"
     "\n"
-    "  [LANG]              Specify language stylization (default: %s).\n"
+    "  [LANG]\n"
+    "                Specify language stylization (default: %s).\n"
     "\n"
-    "  -h, --heat PERCENT  Generation heat (default: 60%%). Increase it for more\n"
-    "                      random output, but it may be less coherent. Decrease it\n"
-    "                      for less diverse output, but it may be more repetitive.\n"
+    "  -h, --heat PERCENT\n"
+    "                Generation heat (default: 60%%). Increase it for more random\n"
+    "                output, but it may be less coherent. Decrease it for less\n"
+    "                diverse output, but it may be more repetitive.\n"
     "\n"
-    "  -s, --seed [SEED]   Set random number generator seed (default: current time\n"
-    "                      and \"/dev/urandom\" if available). If SEED is not\n"
-    "                      provided, the chosen random value will be displayed\n"
-    "                      alongside the generated text.\n"
+    "  -s, --seed [SEED]\n"
+    "                Set random number generator seed (default: current time and\n"
+    "                \"/dev/urandom\" if available). If SEED is not provided, the\n"
+    "                chosen random value will be displayed alongside the generated\n"
+    "                text.\n"
     "\n"
-    "  -v, --version [NUM] Set expected model version (default: 0 for newest\n"
-    "                      version). You can use it to get deterministic output\n"
-    "                      even if the model changes in the future. Use this option\n"
-    "                      without argument to see current version.\n"
+    "  -v, --version [NUM]\n"
+    "                Set expected model version (default: 0 for newest version). You\n"
+    "                can use it to get deterministic output even if the model\n"
+    "                changes in the future. Use this option without argument to see\n"
+    "                current version.\n"
     "\n"
-    "  -p, --prefix [NUM]  Prefix the text with original Lorem Ipsum passage.\n"
-    "                      The NUM is the number of words (default: 5).\n"
+    "  -p, --prefix [NUM]\n"
+    "                Prefix the text with original Lorem Ipsum passage. The NUM is\n"
+    "                the number of words (default: 5).\n"
+    "\n"
+    "  -pd, --paragraph-default\n"
+    "                Enable paragraphs with default parameters.\n"
     "\n"
     "  -ps, --paragraph-separator SEPARATOR\n"
-    "                      Enable paragraphs with the specified SEPARATOR.\n"
-    "                      You can use escape sequences: \\\\ \\r \\n \\xNN\n"
+    "                Enable paragraphs with the specified SEPARATOR. You can use\n"
+    "                escape sequences: \\\\ \\r \\n \\xNN\n"
     "\n"
     "  -pm, --paragraph-mean MEAN\n"
     "  -psv, --paragraph-shorter-variance VARIANCE\n"
     "  -plv, --paragraph-longer-variance VARIANCE\n"
-    "                      Enable paragraphs with the specified parameters.\n"
-    "                      Parameters are expressed in number of sentences.\n"
-    "                      You can use fractions with precision of '0.1'.\n"
-    "                      The probability of a paragraph length is modeled using\n"
-    "                      normal distribution with the specified MEAN.\n"
-    "                      The distribution is asymmetric with different VARIANCE\n"
-    "                      for paragraphs shorter than the mean and paragraphs\n"
-    "                      longer than the mean.\n"
+    "                Enable paragraphs generation with the specified parameters.\n"
+    "                Parameters are expressed in number of sentences. You can use\n"
+    "                fractions with precision of '0.1'. The probability of\n"
+    "                a paragraph length is modeled using normal distribution with\n"
+    "                the specified MEAN. The distribution is asymmetric with\n"
+    "                different VARIANCE for paragraphs shorter than the mean and\n"
+    "                different for paragraphs longer than the mean. Maximum number\n"
+    "                of sentences in a paragraph is 64. Last paragraph may not\n"
+    "                follow the same distribution to ensure correct text length.\n"
     "\n"
-    "  -l, --languages     List available language stylizations and exit.\n"
+    "  -l, --languages\n"
+    "                List available language stylizations and exit.\n"
     "\n"
-    "  -h, --help          Show this help message and exit.\n"
+    "  -h, --help\n"
+    "                Show this help message and exit.\n"
     "\n";
 
 static const char lorem_ipsum_passage[] = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, "
@@ -77,10 +88,11 @@ static void usage(const char* self, int error) {
     }
 }
 
-uint32_t parse_cli_uint(const char* str, const char* fail_or_error_with_arg) {
+uint32_t parse_cli_uint(const char* str, const char* fail_or_error_with_arg)
+{
     char* endptr = NULL;
-    uint32_t value = (uint32_t)strtoul(str, &endptr, 10);
     while (*str == ' ') str++;
+    uint32_t value = (uint32_t)strtoul(str, &endptr, 10);
     if (endptr == NULL || (*endptr != '\0' && *endptr != '%' && *endptr != ' ') || endptr == str) {
         if (fail_or_error_with_arg) {
             fprintf(stderr, "Error: Invalid number '%s' after '%s'.\n", str, fail_or_error_with_arg);
@@ -89,6 +101,66 @@ uint32_t parse_cli_uint(const char* str, const char* fail_or_error_with_arg) {
         return 0xFFFFFFFF;
     }
     return value;
+}
+
+uint32_t parse_cli_fixed_tenths(const char* str, const char* fail_or_error_with_arg)
+{
+    // Convert string to double, then multiply by 10 and round to nearest integer
+    char* endptr = NULL;
+    while (*str == ' ') str++;
+    double value = strtod(str, &endptr);
+    if (endptr == NULL || (*endptr != '\0' && *endptr != ' ') || endptr == str) {
+        if (fail_or_error_with_arg) {
+            fprintf(stderr, "Error: Invalid number '%s' after '%s'.\n", str, fail_or_error_with_arg);
+            exit(12);
+        }
+        return 0xFFFFFFFF;
+    }
+    return (uint32_t)(value * 10 + 0.5);
+}
+
+const char* parse_cli_escaped_string(const char* str)
+{
+    char* res = malloc(strlen(str) + 1);
+    const char* src = str;
+    char* dst = res;
+    while (*src) {
+        if (*src == '\\') {
+            src++;
+            if (*src == 'n') {
+                *dst++ = '\n';
+            } else if (*src == 'r') {
+                *dst++ = '\r';
+            } else if (*src == '\\') {
+                *dst++ = '\\';
+            } else if (*src == 'x' || *src == 'X') {
+                int code = 0;
+                for (int i = 0; i < 2 && src[1] != '\0'; i++, src++) {
+                    int h = 0;
+                    if (src[1] >= '0' && src[1] <= '9') {
+                        h = src[1] - '0';
+                    } else if (src[1] >= 'a' && src[1] <= 'f') {
+                        h = src[1] - 'a' + 10;
+                    } else if (src[1] >= 'A' && src[1] <= 'F') {
+                        h = src[1] - 'A' + 10;
+                    }
+                    code = (code << 4) | h;
+                }
+                *dst++ = (char)code;
+            } else if (*src == '\0') {
+                *dst++ = '\\';
+                break;
+            } else {
+                *dst++ = '\\';
+                *dst++ = *src;
+            }
+        } else {
+            *dst++ = *src;
+        }
+        src++;
+    }
+    *dst = '\0';
+    return res;
 }
 
 int main(int argc, char* argv[]) {
@@ -103,6 +175,11 @@ int main(int argc, char* argv[]) {
     uint32_t heat = 60;
     uint32_t prefix = 0;
     uint32_t text_length = 200;
+    bool enable_paragraphs = false;
+    const char* separator = NULL;
+    int32_t mean = 50;
+    int32_t shorter_variance = 20;
+    int32_t longer_variance = 40;
     const char* lang = languages[0];
 
     for (i = 1; i < argc; i++) {
@@ -143,6 +220,24 @@ int main(int argc, char* argv[]) {
                 } else {
                     prefix = 5;
                 }
+            } else if (i + 1 < argc && (strcmp(arg, "ps") == 0 || strcmp(arg, "paragraph-separator") == 0)) {
+                enable_paragraphs = true;
+                separator = parse_cli_escaped_string(argv[i + 1]);
+                i++;
+            } else if (i + 1 < argc && (strcmp(arg, "pm") == 0 || strcmp(arg, "paragraph-mean") == 0)) {
+                enable_paragraphs = true;
+                mean = parse_cli_fixed_tenths(argv[i + 1], argv[i]);
+                i++;
+            } else if (i + 1 < argc && (strcmp(arg, "psv") == 0 || strcmp(arg, "paragraph-shorter-variance") == 0)) {
+                enable_paragraphs = true;
+                shorter_variance = parse_cli_fixed_tenths(argv[i + 1], argv[i]);
+                i++;
+            } else if (i + 1 < argc && (strcmp(arg, "plv") == 0 || strcmp(arg, "paragraph-longer-variance") == 0)) {
+                enable_paragraphs = true;
+                longer_variance = parse_cli_fixed_tenths(argv[i + 1], argv[i]);
+                i++;
+            } else if (strcmp(arg, "pd") == 0 || strcmp(arg, "paragraph-default") == 0) {
+                enable_paragraphs = true;
             } else if (strcmp(arg, "l") == 0 || strcmp(arg, "languages") == 0) {
                 printf("Available languages:");
                 for (j = 0; languages[j]; j++) {
@@ -203,6 +298,10 @@ int main(int argc, char* argv[]) {
     if (!lorem_ipsum_init(&ipsum, lang, heat, seed, version)) {
         fprintf(stderr, "Error: Failed to initialize Lorem Ipsum generator.\n");
         return 1;
+    }
+
+    if (enable_paragraphs) {
+        lorem_ipsum_set_paragraphs(&ipsum, mean, shorter_variance, longer_variance, separator);
     }
 
     static char buffer[sizeof(lorem_ipsum_passage)];

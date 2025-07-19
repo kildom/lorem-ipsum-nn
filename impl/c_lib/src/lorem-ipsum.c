@@ -105,13 +105,18 @@ size_t lorem_ipsum_generate(LoremIpsum* ipsum, char* buffer, size_t buffer_size)
         if (buffer_size < len + 2) {
             break;
         }
+        // Do simple copy of UTF-8 bytes of one character (up to 4 bytes) which is faster than using `strcpy`.
         buffer[0] = next_char[0];
         if (next_char[1]) {
             buffer[1] = next_char[1];
             if (next_char[2]) {
                 buffer[2] = next_char[2];
                 if (next_char[3]) {
-                    buffer[3] = next_char[3]; // TODO: paragraph separator may be longer!
+                    buffer[3] = next_char[3];
+                    // We still have a user provided paragraph separator, so we can copy the rest of the string.
+                    if (next_char[4]) {
+                        strcpy(buffer + 4, next_char + 4);
+                    }
                 }
             }
         }
@@ -527,7 +532,6 @@ static void update_context(LoremIpsum* ipsum, int32_t letter_index)
 {
     int32_t* vect = (int32_t*)ipsum->t.vector_buffer0;
 
-    //printf("(%s)", ipsum->t.model->lower_letters[letter_index]);
     // Update word hashes
     if (letter_index == 0) {
         ipsum->s.last_word_hash = ipsum->s.current_word_hash;
