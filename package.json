@@ -12,7 +12,10 @@
     "import": "./dist/esm/src/ts/lorem-ipsum.mjs"
   },
   "scripts": {
-    "build": "npx esbuild --target=chrome67,edge79,firefox68,safari14 --bundle --global-name=YTgst2yhZeXaCa --sourcemap=linked --minify src/ts/lorem-ipsum.ts --outfile=dist/browser/lorem-ipsum.min.js && npx esbuild --target=chrome67,edge79,firefox68,safari14 --bundle --global-name=YTgst2yhZeXaCa --sourcemap=linked src/ts/lorem-ipsum.ts --outfile=dist/browser/lorem-ipsum.js && npx tsc -b ./src/ts/tsconfig.cjs.json ./src/ts/tsconfig.esm.json && npx tsx scripts/ts-postbuild.ts"
+    "build": "npx esbuild --target=chrome67,edge79,firefox68,safari14 --bundle --global-name=YTgst2yhZeXaCa --sourcemap=linked --minify src/ts/lorem-ipsum.ts --outfile=dist/browser/lorem-ipsum.min.js && npx esbuild --target=chrome67,edge79,firefox68,safari14 --bundle --global-name=YTgst2yhZeXaCa --sourcemap=linked src/ts/lorem-ipsum.ts --outfile=dist/browser/lorem-ipsum.js && npx tsc -b ./src/ts/tsconfig.cjs.json ./src/ts/tsconfig.esm.json && npx tsx scripts/ts-postbuild.ts",
+    "web-dev": "vite",
+    "web-build": "vite build --emptyOutDir",
+    "web-preview": "vite preview"
   },
   "repository": {
     "type": "git",
@@ -25,8 +28,25 @@
   },
   "homepage": "https://github.com/kildom/lorem-ipsum-nn#readme",
   "devDependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@eslint/js": "^9.30.1",
+    "@fontsource/roboto": "^5.2.6",
+    "@mui/icons-material": "^7.2.0",
+    "@mui/material": "^7.2.0",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^4.6.0",
     "esbuild": "^0.25.8",
+    "eslint": "^9.30.1",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.20",
+    "globals": "^16.3.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
     "tsx": "^4.20.3",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.35.1",
+    "vite": "^7.0.4"
   }
 }
