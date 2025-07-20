@@ -19,6 +19,7 @@
 
 #define FLAG_GENERATE_SPACE (1 << 0)
 #define FLAG_GENERATE_UPPER (1 << 1)
+#define FLAG_ENABLE_PARAGRAPHS (1 << 2)
 
 static const int32_t EXP_TABLE[4][8] = {
     { 512, 1392, 3783, 10284, 27954, 75988, 206556, 561476 },
@@ -81,9 +82,6 @@ bool lorem_ipsum_init(LoremIpsum* ipsum, const char* language, uint32_t heat_per
         }
     }
 
-    ipsum->s.last_word_hash = 0xFFFFFFFF;
-    ipsum->s.current_word_hash = 0xFFFFFFFF;
-
     lorem_ipsum_set_seed(ipsum, seed);
     lorem_ipsum_set_heat(ipsum, heat_percent);
     lorem_ipsum_set_paragraphs(ipsum, LOREM_IPSUM_PARAGRAPHS_DISABLE, 0, 0, NULL);
@@ -145,7 +143,7 @@ const char* lorem_ipsum_next(LoremIpsum* ipsum, size_t remaining_characters)
         return dot_string;
     } else if (ipsum->s.flags & FLAG_GENERATE_SPACE) {
         ipsum->s.flags &= ~FLAG_GENERATE_SPACE;
-        if (ipsum->s.flags & FLAG_GENERATE_UPPER) {
+        if ((ipsum->s.flags & FLAG_GENERATE_UPPER) && (ipsum->s.flags & FLAG_ENABLE_PARAGRAPHS)) {
             ipsum->s.sentences_in_paragraph++;
             if (ipsum->s.sentences_in_paragraph > (int32_t)sizeof(ipsum->s.paragraph_prob_table)) {
                 ipsum->s.sentences_in_paragraph = sizeof(ipsum->s.paragraph_prob_table);
@@ -266,9 +264,11 @@ void lorem_ipsum_set_paragraphs(LoremIpsum* ipsum, int32_t mean, int32_t shorter
     int32_t sum = 0;
     ipsum->t.paragraph_separator = separator ? separator : new_line_string;
     if (mean == LOREM_IPSUM_PARAGRAPHS_DISABLE) {
+        ipsum->s.flags &= ~FLAG_ENABLE_PARAGRAPHS;
         memset(table, 0, sizeof(ipsum->s.paragraph_prob_table));
         return;
     }
+    ipsum->s.flags |= FLAG_ENABLE_PARAGRAPHS;
     if (mean == LOREM_IPSUM_PARAGRAPHS_DEFAULT) {
         mean = 50;
         shorter_variance = 20;
@@ -477,9 +477,9 @@ static int32_t generate_letter(LoremIpsum* ipsum, int32_t remaining_characters)
     const LoremIpsumModel* model = ipsum->t.model;
     int32_t* vect = (int32_t*)ipsum->t.vector_buffer0;
 
-    // Concatenate previous groups and current group, and execute the head NN layer
-    int32_t* group0 = ipsum->s.groups[(ipsum->s.current_group + (12 - 8)) % 12];
-    int32_t* group1 = ipsum->s.groups[(ipsum->s.current_group + (12 - 4)) % 12];
+    // Concatenate previous groups and current group, and execute the head NN
+    int32_t* group0 = ipsum->s.groups[(ipsum->s.current_group + (9 - 8)) % 9];
+    int32_t* group1 = ipsum->s.groups[(ipsum->s.current_group + (9 - 4)) % 9];
     int32_t* group2 = ipsum->s.groups[ipsum->s.current_group];
     memcpy(&vect[0], group0, sizeof(ipsum->s.groups[0]));
     memcpy(&vect[6], group1, sizeof(ipsum->s.groups[0]));
@@ -512,7 +512,7 @@ static void reset_context(LoremIpsum* ipsum)
     memcpy(vect, ipsum->s.group_context, sizeof(ipsum->s.group_context));
     int32_t* group_output = (int32_t*)execute_nn(ipsum, ipsum->t.model->group);
     ipsum->s.current_group = 0;
-    for (i = 0; i < 12; i++) {
+    for (i = 0; i < 9; i++) {
         memcpy(ipsum->s.groups[i], group_output, sizeof(ipsum->s.groups[i]));
     }
 
@@ -521,7 +521,8 @@ static void reset_context(LoremIpsum* ipsum)
     ipsum->s.current_word_hash = 0xFFFFFFFF;
 
     // Initial punctuation state
-    ipsum->s.flags = FLAG_GENERATE_UPPER;
+    ipsum->s.flags |= FLAG_GENERATE_UPPER;
+    ipsum->s.flags &= ~FLAG_GENERATE_SPACE;
     ipsum->s.words_since_dot = 0;
     ipsum->s.words_since_comma = 0;
     ipsum->s.sentences_in_paragraph = 0;
@@ -546,7 +547,7 @@ static void update_context(LoremIpsum* ipsum, int32_t letter_index)
     ipsum->s.group_context[10] = embedding[1];
     ipsum->s.group_context[11] = embedding[2];
     // Make next group active
-    ipsum->s.current_group = (ipsum->s.current_group + 1) % 12;
+    ipsum->s.current_group = (ipsum->s.current_group + 1) % 9;
 
     // Execute group NN with current group context
     memcpy(vect, ipsum->s.group_context, sizeof(ipsum->s.group_context));
@@ -605,6 +606,44 @@ static uint32_t normal_dist(int32_t mean, int32_t variance, int32_t x)
         return 0;
     }
 }
+
+
+#ifdef LOREM_IPSUM_DEBUG
+
+#include <stdio.h>
+
+void lorem_ipsum_print_state(const LoremIpsum* ipsum)
+{
+    printf("rand_state: %u\n", ipsum->s.rand_state);
+    printf("last_word_hash: %u\n", ipsum->s.last_word_hash);
+    printf("current_word_hash: %u\n", ipsum->s.current_word_hash);
+    printf("inv_heat_u3_4: %d\n", ipsum->s.inv_heat_u3_4);
+    printf("words_since_dot: %d\n", ipsum->s.words_since_dot);
+    printf("words_since_comma: %d\n", ipsum->s.words_since_comma);
+    printf("sentences_in_paragraph: %d\n", ipsum->s.sentences_in_paragraph);
+    printf("enable_paragraphs: %s\n", ipsum->s.flags & FLAG_ENABLE_PARAGRAPHS ? "true" : "false");
+    printf("generate_space: %s\n", ipsum->s.flags & FLAG_GENERATE_SPACE ? "true" : "false");
+    printf("generate_upper: %s\n", ipsum->s.flags & FLAG_GENERATE_UPPER ? "true" : "false");
+    printf("groups:\n");
+    for (int i = 0; i < 9; i++) {
+        printf("    ");
+        for (int j = 0; j < 6; j++) {
+            printf("%d ", ipsum->s.groups[(ipsum->s.current_group + 1 + i) % 9][j]);
+        }
+        printf("\n");
+    }
+    printf("group_context: ");
+    for (int i = 0; i < 12; i++) {
+        printf("%d ", ipsum->s.group_context[i]);
+    }
+    printf("paragraph_prob_table: \n    ");
+    for (int i = 0; i < 64; i++) {
+        printf("%d%s", ipsum->s.paragraph_prob_table[i], i % 16 == 15 ? "\n    " : " ");
+    }
+    printf("\n");
+}
+
+#endif
 
 
 #ifdef _VSCODE_

@@ -3,6 +3,7 @@ CC ?= gcc
 
 # Compiler flags
 CFLAGS = -Wall -Wextra -std=c99 -O3
+#CFLAGS += -DLOREM_IPSUM_DEBUG=1
 DEPFLAGS = -MMD -MP
 
 # Include directories

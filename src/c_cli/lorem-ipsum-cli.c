@@ -76,7 +76,7 @@ static const char lorem_ipsum_passage[] = "Lorem ipsum dolor sit amet, consectet
     "quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute "
     "irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. "
     "Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim "
-    "id est laborum.";
+    "id est laborum. ";
 
 
 static void usage(const char* self, int error) {
@@ -324,9 +324,14 @@ int main(int argc, char* argv[]) {
         text_length -= strlen(buffer);
     }
 
+    int buffer_margin = strlen(ipsum.t.paragraph_separator) + 2;
+    if (buffer_margin < 6) {
+        buffer_margin = 6;
+    }
+
     while (text_length > 0) {
         i = 0;
-        while (i < (int)sizeof(buffer) - 6 && text_length > 0) {
+        while (i < (int)sizeof(buffer) - buffer_margin && text_length > 0) {
             text_length--;
             const char* letter = lorem_ipsum_next(&ipsum, text_length);
             int len = strlen(letter);

@@ -19,6 +19,7 @@ from quantizer import QuantizedReLU, quantize_linear, quantize_scaled_softmax
 from train import train, DEFAULT_EPOCHS, DEFAULT_LEARNING_RATE
 from lang import LangConfig, get_lang_config, get_languages
 from format_c import format_c
+from format_ts import format_ts
 
 MAX_WORDS_IN_SENTENCE = 40
 MAX_WORDS_TO_COMMA = 20
@@ -346,6 +347,7 @@ def train_language(lang_code, model_json_file: Path):
 def generate_files(model_json_file: Path):
     output_model = json.loads(model_json_file.read_text())
     format_c(output_model, model_json_file)
+    format_ts(output_model, model_json_file)
 
 def main():
     # Parse command line arguments

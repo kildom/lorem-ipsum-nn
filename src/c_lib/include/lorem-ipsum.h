@@ -24,7 +24,7 @@ typedef struct LoremIpsum
 {
     struct {
         uint32_t rand_state;
-        int32_t groups[12][6];
+        int32_t groups[9][6];
         int32_t current_group;
         uint32_t last_word_hash;
         uint32_t current_word_hash;
@@ -191,6 +191,18 @@ static inline void* lorem_ipsum_get_state_buffer(LoremIpsum* ipsum, uint32_t* si
     if (size) *size = sizeof(ipsum->s);
     return (void*)&ipsum->s;
 }
+
+
+#ifdef LOREM_IPSUM_DEBUG
+/** @brief Prints the internal state of the Lorem Ipsum generator.
+ *
+ * This function is for debugging purposes only.
+ * It prints the internal state of the generator to the standard output.
+ *
+ * @param ipsum Pointer to the LoremIpsum structure.
+ */
+void lorem_ipsum_print_state(const LoremIpsum* ipsum);
+#endif
 
 
 #endif // _LOREM_IPSUM_H
