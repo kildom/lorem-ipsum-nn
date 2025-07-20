@@ -8,3 +8,6 @@ __pycache__
 /runs/
 tmp-*
 /build/
+node_modules
+/dist/
+*.tgz

@@ -1,0 +1,8 @@
+*
+!/README.md
+!/LICENSE.txt
+!/package.json
+!/src/ts/*.ts
+!/models/*.ts
+!/dist/cjs/**/*
+!/dist/esm/**/*

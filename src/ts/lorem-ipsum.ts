@@ -51,26 +51,33 @@ interface IScaledSoftmaxLayer {
 }
 
 
+// #endregion ------------------------------------------------------------
+// #region                     LoremIpsum class
+// -----------------------------------------------------------------------
+
 
 export class LoremIpsum {
 
     private randState: number = 0;
-    private groups: number[][];
-    private lastWordHash: number;
-    private currentWordHash: number;
+    private groups!: number[][];
+    private lastWordHash!: number;
+    private currentWordHash!: number;
     private groupContext: number[] = new Array(4 * 3).fill(0);
     private invHeat: number = 26;
-    private generateUpper: boolean;
-    private generateSpace: boolean;
-    private wordsSinceDot: number;
-    private wordsSinceComma: number;
-    private sentencesInParagraph: number;
+    private generateUpper!: boolean;
+    private generateSpace!: boolean;
+    private wordsSinceDot!: number;
+    private wordsSinceComma!: number;
+    private sentencesInParagraph!: number;
     private enableParagraphs: boolean = false;
     private paragraphProbTable: number[] = new Array(64).fill(0);
     private model: typeof models[keyof typeof models] = models.defaultModel;
     private paragraphSeparator: string = '\n';
     private letterToIndex: { [key: string]: number } = {};
 
+    // #endregion ------------------------------------------------------------
+    // #region                     Public interface
+    // -----------------------------------------------------------------------
 
     public constructor(options?: ILoremIpsumOptions) {
 
@@ -147,19 +154,8 @@ export class LoremIpsum {
     }
 
 
-    private normalDist(mean: number, variance: number, x: number): number {
-        x = x - mean;
-        if (x < 0) x = -x;
-        let exp = Math.trunc(4095 - x * x * (1 << 9) / (10 * 2 * variance));
-        if (exp >= 0) {
-            let y = EXP_TABLE[0][(exp >> 9) & 0x7];
-            y = (y * EXP_TABLE[1][(exp >> 6) & 0x7]) >> 9;
-            y = (y * EXP_TABLE[2][(exp >> 3) & 0x7]) >> 9;
-            y = (y * EXP_TABLE[3][(exp >> 0) & 0x7]) >> (9 + 9);
-            return y;
-        } else {
-            return 0;
-        }
+    public static languages(): string[] {
+        return Object.keys(models);
     }
 
 
@@ -186,71 +182,6 @@ export class LoremIpsum {
         return result;
     }
 
-    public setContext(contextText?: string): void {
-
-        this.resetContext();
-
-        if (contextText == null || contextText == '') {
-            return; // Just reset the generator state
-        }
-
-        let i = 0;
-
-        while (i < contextText.length) {
-            let currentChar = contextText[i];
-            if (currentChar === '.') {
-                this.wordsSinceDot = 0;
-                this.wordsSinceComma = 0;
-                this.generateSpace = true;
-                this.generateUpper = true;
-                this.updateContext(0);
-                i++;
-            } else if (currentChar === ',') {
-                this.wordsSinceDot++;
-                this.wordsSinceComma = 0;
-                this.generateSpace = true;
-                this.updateContext(0);
-                i++;
-            } else if (currentChar === ' ' || contextText.substring(i, i + this.paragraphSeparator.length) === this.paragraphSeparator) {
-                if (!(this.generateSpace)) {
-                    this.wordsSinceDot++;
-                    this.wordsSinceComma++;
-                    this.updateContext(0);
-                } else {
-                    this.generateSpace = false;
-                    if (this.generateUpper) {
-                        this.sentencesInParagraph++;
-                        if (contextText.substring(i, i + this.paragraphSeparator.length) === this.paragraphSeparator) {
-                            this.sentencesInParagraph = 0;
-                        }
-                    }
-                }
-                i++;
-            } else {
-                let letterIndex: number | undefined = this.letterToIndex[currentChar];
-                if (letterIndex != null) {
-                    this.generateSpace = false;
-                    this.generateUpper = false;
-                    this.updateContext(letterIndex);
-                }
-                i++;
-            }
-        }
-    }
-
-    private generateLetter(remainingCharacters: number) {
-        // Concatenate previous groups and current group, and execute the head NN
-        let vect = this.groups[0].concat(this.groups[4], this.groups[8]);
-        vect = this.executeNN(this.model.head, vect);
-
-        // Prevent unnecessary spaces (no repeating spaces, spaces near the end, at the beginning or after repeating words)
-        if (vect[0] > 0 && (remainingCharacters < 3 || this.lastWordHash == this.currentWordHash || this.currentWordHash == (0xFFFFFFFF | 0))) {
-            vect[0] = 0;
-        }
-
-        // Get random letter index based on probabilities
-        return this.randomFromProbs(vect);
-    }
 
     public next(remainingCharacters: number): string {
 
@@ -321,91 +252,62 @@ export class LoremIpsum {
     }
 
 
-    private updateContext(letterIndex: number): void {
+    public setContext(contextText?: string): void {
 
-        // Update word hashes
-        if (letterIndex == 0) {
-            this.lastWordHash = this.currentWordHash;
-            this.currentWordHash = 0xFFFFFFFF | 0;
-        } else {
-            this.currentWordHash = (this.currentWordHash << 6) | (letterIndex & 0x3F);
+        this.resetContext();
+
+        if (contextText == null || contextText == '') {
+            return; // Just reset the generator state
         }
-        // Shift in the new letter index into the group context
-        this.groupContext.splice(0, 3);
-        this.groupContext.push(...this.model.letters_embedding[letterIndex]);
-        // Remove old group
-        this.groups.shift();
 
-        // Execute group NN with current group context
-        let newGroup = this.executeNN(this.model.group, this.groupContext);
-        this.groups.push(newGroup);
-    }
+        let i = 0;
 
-
-    private randomFromProbs(probs: number[]): number {
-        let sum: number = 0;
-        for (let i = 0; i < probs.length; i++) {
-            sum += probs[i];
-            probs[i] = sum;
-        }
-        return this.randomFromCumsum(probs);
-    }
-
-    private randLCG(): number {
-        let result = this.randState;
-        this.randState = ((Math.imul(1664525, result) >>> 0) + 1013904223) >>> 0;
-        return result >>> 8;
-    }
-
-    private randomFromCumsum(cumsum: number[]): number {
-        const maxValue = cumsum.at(-1)!;
-        if (maxValue <= 0) {
-            return this.randLCG() % cumsum.length;
-        }
-        const rand = this.randLCG() % maxValue;
-        let start = 0;
-        let end = cumsum.length;
-        while (start < end) {
-            let mid = (start + end) >> 1;
-            if (rand < cumsum[mid]) {
-                end = mid;
+        while (i < contextText.length) {
+            let currentChar = contextText[i];
+            if (currentChar === '.') {
+                this.wordsSinceDot = 0;
+                this.wordsSinceComma = 0;
+                this.generateSpace = true;
+                this.generateUpper = true;
+                this.updateContext(0);
+                i++;
+            } else if (currentChar === ',') {
+                this.wordsSinceDot++;
+                this.wordsSinceComma = 0;
+                this.generateSpace = true;
+                this.updateContext(0);
+                i++;
+            } else if (currentChar === ' ' || contextText.substring(i, i + this.paragraphSeparator.length) === this.paragraphSeparator) {
+                if (!(this.generateSpace)) {
+                    this.wordsSinceDot++;
+                    this.wordsSinceComma++;
+                    this.updateContext(0);
+                } else {
+                    this.generateSpace = false;
+                    if (this.generateUpper) {
+                        this.sentencesInParagraph++;
+                        if (contextText.substring(i, i + this.paragraphSeparator.length) === this.paragraphSeparator) {
+                            this.sentencesInParagraph = 0;
+                        }
+                    }
+                }
+                i++;
             } else {
-                start = mid + 1;
+                let letterIndex: number | undefined = this.letterToIndex[currentChar];
+                if (letterIndex != null) {
+                    this.generateSpace = false;
+                    this.generateUpper = false;
+                    this.updateContext(letterIndex);
+                }
+                i++;
             }
         }
-        return start;
     }
 
 
-    public static languages(): string[] {
-        return Object.keys(models);
-    }
-
-
-    private resetContext(): void {
-        // Fill group context with spaces
-        this.groupContext = [
-            ...this.model.letters_embedding[0],
-            ...this.model.letters_embedding[0],
-            ...this.model.letters_embedding[0],
-            ...this.model.letters_embedding[0],
-        ];
-
-        // Calculate initial group embeddings for spaces
-        const groupFeatures = this.executeNN(this.model.group, this.groupContext);
-        this.groups = new Array(9).fill(groupFeatures);
-
-        // Initial group hashes
-        this.lastWordHash = 0xFFFFFFFF | 0;
-        this.currentWordHash = 0xFFFFFFFF | 0;
-
-        // Initial punctuation state
-        this.generateUpper = true;
-        this.generateSpace = false;
-        this.wordsSinceDot = 0;
-        this.wordsSinceComma = 0;
-        this.sentencesInParagraph = 0;
-    }
+    // #endregion ------------------------------------------------------------
+    // #region                 Neural network execution
+    // -----------------------------------------------------------------------
 
 
     private executeLinear(layer: ILinearLayer, input: number[]): number[] {
@@ -501,6 +403,137 @@ export class LoremIpsum {
         return vector;
     }
 
+
+    // #endregion ------------------------------------------------------------
+    // #region                 Random number generator
+    // -----------------------------------------------------------------------
+
+
+    private randLCG(): number {
+        let result = this.randState;
+        this.randState = ((Math.imul(1664525, result) >>> 0) + 1013904223) >>> 0;
+        return result >>> 8;
+    }
+
+
+    private randomFromCumsum(cumsum: number[]): number {
+        const maxValue = cumsum.at(-1)!;
+        if (maxValue <= 0) {
+            return this.randLCG() % cumsum.length;
+        }
+        const rand = this.randLCG() % maxValue;
+        let start = 0;
+        let end = cumsum.length;
+        while (start < end) {
+            let mid = (start + end) >> 1;
+            if (rand < cumsum[mid]) {
+                end = mid;
+            } else {
+                start = mid + 1;
+            }
+        }
+        return start;
+    }
+
+
+    private randomFromProbs(probs: number[]): number {
+        let sum: number = 0;
+        for (let i = 0; i < probs.length; i++) {
+            sum += probs[i];
+            probs[i] = sum;
+        }
+        return this.randomFromCumsum(probs);
+    }
+
+
+    // #endregion ------------------------------------------------------------
+    // #region             Generation and context management
+    // -----------------------------------------------------------------------
+
+
+    private generateLetter(remainingCharacters: number) {
+        // Concatenate previous groups and current group, and execute the head NN
+        let vect = this.groups[0].concat(this.groups[4], this.groups[8]);
+        vect = this.executeNN(this.model.head, vect);
+
+        // Prevent unnecessary spaces (no repeating spaces, spaces near the end, at the beginning or after repeating words)
+        if (vect[0] > 0 && (remainingCharacters < 3 || this.lastWordHash == this.currentWordHash || this.currentWordHash == (0xFFFFFFFF | 0))) {
+            vect[0] = 0;
+        }
+
+        // Get random letter index based on probabilities
+        return this.randomFromProbs(vect);
+    }
+
+
+    private resetContext(): void {
+        // Fill group context with spaces
+        this.groupContext = [
+            ...this.model.letters_embedding[0],
+            ...this.model.letters_embedding[0],
+            ...this.model.letters_embedding[0],
+            ...this.model.letters_embedding[0],
+        ];
+
+        // Calculate initial group embeddings for spaces
+        const groupFeatures = this.executeNN(this.model.group, this.groupContext);
+        this.groups = new Array(9).fill(groupFeatures);
+
+        // Initial group hashes
+        this.lastWordHash = 0xFFFFFFFF | 0;
+        this.currentWordHash = 0xFFFFFFFF | 0;
+
+        // Initial punctuation state
+        this.generateUpper = true;
+        this.generateSpace = false;
+        this.wordsSinceDot = 0;
+        this.wordsSinceComma = 0;
+        this.sentencesInParagraph = 0;
+    }
+
+
+    private updateContext(letterIndex: number): void {
+
+        // Update word hashes
+        if (letterIndex == 0) {
+            this.lastWordHash = this.currentWordHash;
+            this.currentWordHash = 0xFFFFFFFF | 0;
+        } else {
+            this.currentWordHash = (this.currentWordHash << 6) | (letterIndex & 0x3F);
+        }
+        // Shift in the new letter index into the group context
+        this.groupContext.splice(0, 3);
+        this.groupContext.push(...this.model.letters_embedding[letterIndex]);
+        // Remove old group
+        this.groups.shift();
+
+        // Execute group NN with current group context
+        let newGroup = this.executeNN(this.model.group, this.groupContext);
+        this.groups.push(newGroup);
+    }
+
+
+    // #endregion ------------------------------------------------------------
+    // #region                    Utility functions
+    // -----------------------------------------------------------------------
+
+
+    private normalDist(mean: number, variance: number, x: number): number {
+        x = x - mean;
+        if (x < 0) x = -x;
+        let exp = Math.trunc(4095 - x * x * (1 << 9) / (10 * 2 * variance));
+        if (exp >= 0) {
+            let y = EXP_TABLE[0][(exp >> 9) & 0x7];
+            y = (y * EXP_TABLE[1][(exp >> 6) & 0x7]) >> 9;
+            y = (y * EXP_TABLE[2][(exp >> 3) & 0x7]) >> 9;
+            y = (y * EXP_TABLE[3][(exp >> 0) & 0x7]) >> (9 + 9);
+            return y;
+        } else {
+            return 0;
+        }
+    }
+
+
     debugDumpState() {
         console.log(`rand_state: ${this.randState}`);
         console.log(`last_word_hash: ${this.lastWordHash >>> 0}`);
@@ -519,34 +552,7 @@ export class LoremIpsum {
         console.log('    ' + this.paragraphProbTable.map((x, i) => (i % 16 == 15) ? `${x}\n    ` : `${x} `).join(''));
     }
 
+
+    // #endregion ------------------------------------------------------------
+
 }
-
-function main() {
-    let ipsum = new LoremIpsum({
-        language: 'la',
-        seed: 0,
-        paragraphs: {
-            separator: '\n',
-        },
-    });
-
-    // let text = '';
-    // for (let i = 0; i < 48; i++) {
-    //     text += ipsum.next(2000);
-    // }
-    // console.log(text);
-    // ipsum.debugDumpState();
-    // console.log(ipsum.next(2000));
-    // ipsum.debugDumpState();
-    let context = ("Lorem ipsum dolor sit amet, consectetur adipiscing elit, " +
-        "sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, " +
-        "quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute " +
-        "irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. " +
-        "Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim " +
-        "id est laborum. ")//.replace(/@/g, ' ');
-    ipsum.setContext(context);
-    //ipsum.debugDumpState();
-    console.log(context + ipsum.generate(854));
-}
-
-setTimeout(main, 0);

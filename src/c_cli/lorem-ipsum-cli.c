@@ -239,9 +239,9 @@ int main(int argc, char* argv[]) {
             } else if (strcmp(arg, "pd") == 0 || strcmp(arg, "paragraph-default") == 0) {
                 enable_paragraphs = true;
             } else if (strcmp(arg, "l") == 0 || strcmp(arg, "languages") == 0) {
-                printf("Available languages:");
+                printf("Available language stylizations:");
                 for (j = 0; languages[j]; j++) {
-                    printf(" %s", languages[j]);
+                    printf(j == 0 ? " %s (default)" : ", %s", languages[j]);
                 }
                 printf("\n");
                 return 0;

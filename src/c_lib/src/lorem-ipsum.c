@@ -49,19 +49,6 @@ static uint32_t normal_dist(int32_t mean, int32_t variance, int32_t x);
 #endif                /* ----------------------------------------------------------------------- */
 
 
-const char *const * lorem_ipsum_languages()
-{
-    if (models_names[0] == NULL) {
-        int i;
-        for (i = 0; i < LOREM_IPSUM_MODELS_COUNT; i++) {
-            models_names[i] = models[i]->lang;
-        }
-        models_names[LOREM_IPSUM_MODELS_COUNT] = NULL;
-    }
-    return models_names;
-}
-
-
 bool lorem_ipsum_init(LoremIpsum* ipsum, const char* language, uint32_t heat_percent, uint32_t seed, uint32_t ver)
 {
     int i;
@@ -88,6 +75,19 @@ bool lorem_ipsum_init(LoremIpsum* ipsum, const char* language, uint32_t heat_per
     reset_context(ipsum);
 
     return (ver <= 1);
+}
+
+
+const char *const * lorem_ipsum_languages()
+{
+    if (models_names[0] == NULL) {
+        int i;
+        for (i = 0; i < LOREM_IPSUM_MODELS_COUNT; i++) {
+            models_names[i] = models[i]->lang;
+        }
+        models_names[LOREM_IPSUM_MODELS_COUNT] = NULL;
+    }
+    return models_names;
 }
 
 
