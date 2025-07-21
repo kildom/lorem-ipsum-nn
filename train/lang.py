@@ -3,6 +3,7 @@ from pathlib import Path
 
 
 class LangConfig:
+    NAME: str
     CODE: str
     ALPHABET: str
     ALPHABET_LENGTH: int
@@ -12,6 +13,7 @@ class LangConfig:
     def __init__(self, parent, language_code):
         self.parent = parent
         self.CODE = language_code
+        self.NAME = parent.NAME
         self.ALPHABET = ' ' + parent.ALPHABET
         self.ALPHABET_LENGTH = len(self.ALPHABET)
         self.INDEX_TO_LETTER = [i for i in self.ALPHABET]

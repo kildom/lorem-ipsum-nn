@@ -404,6 +404,7 @@ static const uint8_t model_pl_prob_comma[] = {
 
 const struct LoremIpsumModel lorem_ipsum_pl = {
     .lang = "pl",
+    .name = "Polish",
     .lower_letters = model_pl_lower_letters,
     .upper_letters = model_pl_upper_letters,
     .letters_count = 33,

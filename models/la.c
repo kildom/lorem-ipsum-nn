@@ -382,6 +382,7 @@ static const uint8_t model_la_prob_comma[] = {
 
 const struct LoremIpsumModel lorem_ipsum_la = {
     .lang = "la",
+    .name = "Latin",
     .lower_letters = model_la_lower_letters,
     .upper_letters = model_la_upper_letters,
     .letters_count = 22,

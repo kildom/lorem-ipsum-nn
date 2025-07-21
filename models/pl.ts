@@ -1,6 +1,7 @@
 
 export const plModel = {
     lang: "pl",
+    name: "Polish",
     letters: " aąbcćdeęfghijklłmnńoóprsśtuwyzźż",
     letters_embedding: [
         [0.0, 0.0, 0.0],

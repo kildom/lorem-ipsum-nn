@@ -18,16 +18,16 @@ const EXP_TABLE = [
 
 
 export interface ILoremIpsumOptions {
-    language?: string;
-    heat?: number;
-    seed?: number;
-    version?: number;
-    paragraphs?: boolean | {
-        separator?: string;
-        mean?: number;
-        variance?: number;
-        shorterVariance?: number;
-        longerVariance?: number;
+    language?: string | undefined;
+    heat?: number | undefined;
+    seed?: number | undefined;
+    version?: number | undefined;
+    paragraphs?: boolean | undefined | {
+        separator?: string | undefined;
+        mean?: number | undefined;
+        variance?: number | undefined;
+        shorterVariance?: number | undefined;
+        longerVariance?: number | undefined;
     };
 }
 
@@ -116,7 +116,7 @@ export class LoremIpsum {
 
         if (options?.heat != null) {
             let heatPercent = Math.round(options.heat * 100);
-            if (heatPercent < 1) {
+            if (heatPercent > 1) {
                 this.invHeat = Math.trunc(1600 / heatPercent);
                 if (this.invHeat > 127) this.invHeat = 127;
                 if (this.invHeat < 1) this.invHeat = 1;
@@ -154,8 +154,8 @@ export class LoremIpsum {
     }
 
 
-    public static languages(): string[] {
-        return Object.keys(models);
+    public static languages(): { [key: string]: string } {
+        return Object.fromEntries(Object.entries(models).map(([key, value]) => [key, value.name]));
     }
 
 
@@ -225,7 +225,6 @@ export class LoremIpsum {
             if (remainingCharacters > MIN_LAST_SENTENCE_LETTERS) {
                 let prob = this.model.prob_dot[this.wordsSinceDot - 1][this.wordsSinceComma - 1] + 1;
                 let rand = (this.randLCG() >> 16) & 0xFF;
-                //console.log(`---------${prob} ${rand} ${this.wordsSinceDot} ${this.wordsSinceComma}`);
                 if (rand < prob) {
                     this.generateSpace = true;
                     this.generateUpper = true;

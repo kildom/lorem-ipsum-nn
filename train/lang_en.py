@@ -28,6 +28,9 @@ def download_text():
 
 class LangEn:
 
+    # Language name, can be used in the UI.
+    NAME = 'English'
+
     # Language alphabet, generated text will also use space, comma, and period that are not included here.
     ALPHABET = 'abcdefghijklmnopqrstuvwxyz'
 

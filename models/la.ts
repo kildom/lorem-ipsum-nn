@@ -1,6 +1,7 @@
 
 export const laModel = {
     lang: "la",
+    name: "Latin",
     letters: " abcdefghilmnopqrstuvx",
     letters_embedding: [
         [0.0, 0.0, 255.0],

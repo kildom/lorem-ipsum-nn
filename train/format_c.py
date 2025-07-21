@@ -135,6 +135,7 @@ def format_c(output_model: dict, file: Path):
 
         const struct LoremIpsumModel lorem_ipsum_{output_model["lang"]} = {{
             .lang = "{c_str(output_model["lang"])}",
+            .name = "{c_str(output_model["name"])}",
             .lower_letters = {id}lower_letters,
             .upper_letters = {id}upper_letters,
             .letters_count = {len(output_model["letters_embedding"])},

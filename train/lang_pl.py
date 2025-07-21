@@ -28,6 +28,8 @@ def download_text():
 
 class LangPl:
 
+    NAME = 'Polish'
+
     ALPHABET = 'aąbcćdeęfghijklłmnńoóprsśtuwyzźż'
 
     @staticmethod

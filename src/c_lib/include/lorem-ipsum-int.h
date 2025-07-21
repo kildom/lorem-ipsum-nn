@@ -37,6 +37,7 @@ typedef struct LoremIpsumScaledSoftmax {
 
 typedef struct LoremIpsumModel {
     const char* lang;
+    const char* name;
     const char* const* lower_letters;
     const char* const* upper_letters;
     uint32_t letters_count;

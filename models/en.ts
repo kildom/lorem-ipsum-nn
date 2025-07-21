@@ -1,6 +1,7 @@
 
 export const enModel = {
     lang: "en",
+    name: "English",
     letters: " abcdefghijklmnopqrstuvwxyz",
     letters_embedding: [
         [0, 255, 0],

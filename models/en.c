@@ -392,6 +392,7 @@ static const uint8_t model_en_prob_comma[] = {
 
 const struct LoremIpsumModel lorem_ipsum_en = {
     .lang = "en",
+    .name = "English",
     .lower_letters = model_en_lower_letters,
     .upper_letters = model_en_upper_letters,
     .letters_count = 27,

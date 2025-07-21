@@ -1,6 +1,20 @@
-html, body, #root {
+body {
   margin: 0;
   padding: 0;
   height: 100%;
   width: 100%;
+}
+
+
+.result-plain {
+  font-family: monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.result-formatted {
+  font-size: 12pt;
+  font-family: 'Times New Roman', serif;
+  line-height: 1.4;
+  text-align: justify;
 }

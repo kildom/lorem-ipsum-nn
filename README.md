@@ -36,14 +36,14 @@ A deterministic Lorem Ipsum generator powered by a simple neural network.
 You have a lot of usage options, since the generator was ported on multiple platforms.
 On each platform it gives the same deterministic output.
 
+* **On-line Web Generator** - go to [`https://kildom.githib.io/lorem-ipsum-nn/`](https://kildom.github.io/lorem-ipsum-nn/).
 * **Portable C/C++ Library** - see [`src/c_lib/README.md`](src/c_lib/README.md).
+* **JavaScript Package** - see [`src/js/README.md`](`src/python/README.md`), also available on [`npm`](https://www.npmjs.com/package/lorem-ipsum-nn), or as a standalone script from [`releases`](https://github.com/kildom/lorem-ipsum-nn/releases), tested with browsers, Node, and Deno. Includes TypeScript declarations.
 * **CLI Program** - see [`src/c_cli/README.md`](src/c_cli/README.md), you can also download precompiled binaries from [`releases`](https://github.com/kildom/lorem-ipsum-nn/releases).
 
 TODO:
 
-* **On-line Web Generator** - go to [`https://kildom.githib.io/lorem-ipsum-nn/`](https://kildom.github.io/lorem-ipsum-nn/).
 * **Python Package** - see [`src/python/README.md`](`src/python/README.md`), or install with [`pip`](https://pypi.org/project/lorem-ipsum-nn/)
-* **JavaScript Package** - see [`src/js/README.md`](`src/python/README.md`), also available on [`npm`](https://www.npmjs.com/package/lorem-ipsum-nn), or as a standalone script from [`releases`](https://github.com/kildom/lorem-ipsum-nn/releases), tested with browsers, Node, and Deno. Includes TypeScript declarations.
 
 ## Training
 

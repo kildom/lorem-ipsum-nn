@@ -42,6 +42,8 @@ def download_text():
 
 class LangLa:
 
+    NAME = 'Latin'
+
     ALPHABET = "abcdefghilmnopqrstuvx"
 
     @staticmethod
