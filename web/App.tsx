@@ -35,7 +35,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import Code from '@mui/icons-material/Code';
 import './App.css'
 import Menu from '@mui/material/Menu';
-import { LoremIpsum, ILoremIpsumOptions } from '../../src/ts/lorem-ipsum';
+import { LoremIpsum, ILoremIpsumOptions } from '../src/ts/lorem-ipsum';
 
 
 interface ILoremIpsumInBg {
