@@ -163,6 +163,20 @@ const char* parse_cli_escaped_string(const char* str)
     return res;
 }
 
+#if defined(_WIN32) && !defined(__CYGWIN__)
+
+#include <windows.h>
+
+static void prepare_console() {
+    SetConsoleOutputCP(CP_UTF8);
+}
+
+#else
+
+#define prepare_console()
+
+#endif
+
 int main(int argc, char* argv[]) {
     int i, j;
 
@@ -181,6 +195,8 @@ int main(int argc, char* argv[]) {
     int32_t shorter_variance = 20;
     int32_t longer_variance = 40;
     const char* lang = languages[0];
+
+    prepare_console();
 
     for (i = 1; i < argc; i++) {
         const char* arg = argv[i];

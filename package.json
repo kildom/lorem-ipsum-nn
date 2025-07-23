@@ -16,7 +16,7 @@
     "web-dev": "vite",
     "web-build": "vite build --emptyOutDir",
     "web-preview": "vite preview",
-    "cli-build": "cd src/c_cli && make distclean && make && ../../dist/cli/lorem-ipsum 200 -s 0 -p"
+    "cli-build": "cd src/c_cli && make distclean && make && cd ../../dist/cli && lorem-ipsum 200 -s 0 -p"
   },
   "repository": {
     "type": "git",
