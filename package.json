@@ -15,7 +15,8 @@
     "build": "npx esbuild --target=chrome67,edge79,firefox68,safari14 --bundle --global-name=YTgst2yhZeXaCa --sourcemap=linked --minify src/ts/lorem-ipsum.ts --outfile=dist/browser/lorem-ipsum.min.js && npx esbuild --target=chrome67,edge79,firefox68,safari14 --bundle --global-name=YTgst2yhZeXaCa --sourcemap=linked src/ts/lorem-ipsum.ts --outfile=dist/browser/lorem-ipsum.js && npx tsc -b ./src/ts/tsconfig.cjs.json ./src/ts/tsconfig.esm.json && npx tsx scripts/ts-postbuild.ts",
     "web-dev": "vite",
     "web-build": "vite build --emptyOutDir",
-    "web-preview": "vite preview"
+    "web-preview": "vite preview",
+    "cli-build": "cd src/c_cli && make distclean && make && ../../dist/cli/lorem-ipsum 200 -s 0 -p"
   },
   "repository": {
     "type": "git",

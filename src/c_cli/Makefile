@@ -2,15 +2,21 @@
 CC ?= gcc
 
 # Compiler flags
-CFLAGS = -Wall -Wextra -std=c99 -O3
+CFLAGS = -Wall -Wextra -std=c99 -O3 -flto
 #CFLAGS += -DLOREM_IPSUM_DEBUG=1
 DEPFLAGS = -MMD -MP
+
+# Linker flags
+LDFLAGS = -static -flto -O3
 
 # Include directories
 INCLUDES = -I. -I../../models -I../c_lib/include
 
 # Build directory
-BUILDDIR = ../../build/cli
+BUILDDIR = ../../data/build_cli
+
+# Distribution directory
+DISTDIR = ../../dist/cli
 
 # Source directories
 SRCDIR = .
@@ -34,18 +40,22 @@ OBJECTS = $(addprefix $(BUILDDIR)/, $(notdir $(SOURCES:.c=.o)))
 DEPS = $(OBJECTS:.o=.d)
 
 # Target executable name (based on the main source file)
-TARGET = $(BUILDDIR)/lorem-ipsum$(EXE_SUFFIX)
+TARGET = $(DISTDIR)/lorem-ipsum$(EXE_SUFFIX)
 
 # Default target
-all: $(BUILDDIR) $(TARGET)
+all: $(BUILDDIR) $(DISTDIR) $(TARGET)
 
 # Create build directory
 $(BUILDDIR):
 	mkdir -p $(BUILDDIR)
 
+# Create distribution directory
+$(DISTDIR):
+	mkdir -p $(DISTDIR)
+
 # Link the executable
 $(TARGET): $(OBJECTS)
-	$(CC) $(OBJECTS) -o $@
+	$(CC) $(LDFLAGS) $(OBJECTS) -o $@
 
 # Compile .c files from current directory
 $(BUILDDIR)/%.o: %.c | $(BUILDDIR)
@@ -68,8 +78,7 @@ clean:
 
 # Clean everything including backup files and build directory
 distclean: clean
-	rm -f *~ *.bak
-	rm -rf $(BUILDDIR)
+	rm -rf $(BUILDDIR) $(DISTDIR)
 
 # Phony targets
 .PHONY: all clean distclean debug
@@ -80,6 +89,7 @@ debug:
 	@echo "CFLAGS: $(CFLAGS)"
 	@echo "EXE_SUFFIX: $(EXE_SUFFIX)"
 	@echo "BUILDDIR: $(BUILDDIR)"
+	@echo "DISTDIR: $(DISTDIR)"
 	@echo "SOURCES: $(SOURCES)"
 	@echo "OBJECTS: $(OBJECTS)"
 	@echo "DEPS: $(DEPS)"

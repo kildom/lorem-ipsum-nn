@@ -7,7 +7,6 @@ __pycache__
 /data/
 /runs/
 tmp-*
-/build/
 node_modules
 /dist/
 *.tgz
