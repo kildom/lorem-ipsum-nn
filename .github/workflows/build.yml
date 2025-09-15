@@ -13,7 +13,55 @@ on:
         - 'no'
         - 'yes'
 jobs:
+  win_build:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/cache@v3
+      with:
+        key: ${{ runner.os }}-msys2
+        path: C:/msys64/var/cache/pacman/pkg
+    - name: Checkout
+      uses: actions/checkout@v4.1.1
+    - name: Prepare build x64
+      shell: bash
+      run: |
+        cat << 'EEEEEnDOfThIssTrIng' > script.sh
+        #!/bin/bash
+        set -e
+        pacman -S --noconfirm mingw-w64-ucrt-x86_64-gcc mingw-w64-i686-gcc zip make
+        rm -Rf dist/cli data
+        cd src/c_cli
+        make
+        cd ../../dist/cli
+        zip -r ../../lorem-ipsum-x64-win.zip *
+        EEEEEnDOfThIssTrIng
+    - name: Build x64
+      shell: cmd
+      run: |
+        CALL C:\msys64\msys2_shell.cmd -defterm -here -no-start -ucrt64 script.sh
+    - name: Prepare build x86
+      shell: bash
+      run: |
+        cat << 'EEEEEnDOfThIssTrIng' > script.sh
+        #!/bin/bash
+        set -e
+        rm -Rf dist/cli data
+        cd src/c_cli
+        make
+        cd ../../dist/cli
+        zip -r ../../lorem-ipsum-x86-win.zip *
+        EEEEEnDOfThIssTrIng
+    - name: Build x86
+      shell: cmd
+      run: |
+        CALL C:\msys64\msys2_shell.cmd -defterm -here -no-start -mingw32 script.sh
+    - uses: actions/upload-artifact@v4
+      with:
+        name: Win ZIPs
+        path: ./*.zip
+        retention-days: 1
   build:
+    needs: win_build
     runs-on: ubuntu-latest
     steps:
     - uses: actions/setup-node@v4
@@ -22,6 +70,14 @@ jobs:
         registry-url: 'https://registry.npmjs.org'
     - name: Checkout
       uses: actions/checkout@v4.1.1
+    - uses: actions/download-artifact@v4
+      with:
+        name: Win ZIPs
+        path: .
+    - name: Delete Artifact
+      uses: GeekyEggo/delete-artifact@v5
+      with:
+        name: Win ZIPs
     - name: Install, build, check and test
       run: |
         npm install

@@ -26,6 +26,7 @@ LIBDIR = ../c_lib/src
 # Detect Windows (MinGW/MSYS2)
 ifeq ($(OS),Windows_NT)
     EXE_SUFFIX = .exe
+    LDFLAGS += -static
 else
     EXE_SUFFIX =
 endif
