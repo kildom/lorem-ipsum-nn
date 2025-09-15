@@ -1,5 +1,6 @@
 # Default compiler
 CC ?= gcc
+STRIP ?= strip
 
 # Compiler flags
 CFLAGS = -Wall -Wextra -std=c99 -O3 -flto
@@ -7,10 +8,10 @@ CFLAGS = -Wall -Wextra -std=c99 -O3 -flto
 DEPFLAGS = -MMD -MP
 
 # Linker flags
-LDFLAGS = -static -flto -O3
+LDFLAGS = -flto -O3
 
 # Include directories
-INCLUDES = -I. -I../../models -I../c_lib/include
+INCLUDES = -I. -I../c_lib/include
 
 # Build directory
 BUILDDIR = ../../data/build_cli
@@ -21,7 +22,6 @@ DISTDIR = ../../dist/cli
 # Source directories
 SRCDIR = .
 LIBDIR = ../c_lib/src
-MODELDIR = ../../models
 
 # Detect Windows (MinGW/MSYS2)
 ifeq ($(OS),Windows_NT)
@@ -31,7 +31,7 @@ else
 endif
 
 # Find all .c files in current directory and models directory
-SOURCES = $(wildcard $(SRCDIR)/*.c) $(wildcard $(LIBDIR)/*.c) $(wildcard $(MODELDIR)/*.c)
+SOURCES = $(wildcard $(SRCDIR)/*.c) $(wildcard $(LIBDIR)/*.c)
 
 # Generate object file names (place in build directory)
 OBJECTS = $(addprefix $(BUILDDIR)/, $(notdir $(SOURCES:.c=.o)))
@@ -56,6 +56,7 @@ $(DISTDIR):
 # Link the executable
 $(TARGET): $(OBJECTS)
 	$(CC) $(LDFLAGS) $(OBJECTS) -o $@
+	$(STRIP) $@
 
 # Compile .c files from current directory
 $(BUILDDIR)/%.o: %.c | $(BUILDDIR)
@@ -63,10 +64,6 @@ $(BUILDDIR)/%.o: %.c | $(BUILDDIR)
 
 # Compile .c files from lib directory
 $(BUILDDIR)/%.o: $(LIBDIR)/%.c | $(BUILDDIR)
-	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) -c $< -o $@
-
-# Compile .c files from models directory
-$(BUILDDIR)/%.o: $(MODELDIR)/%.c | $(BUILDDIR)
 	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) -c $< -o $@
 
 # Include dependency files (if they exist)

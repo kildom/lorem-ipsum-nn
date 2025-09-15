@@ -42,7 +42,7 @@ def format_value(value, indent, output_model: dict, key=''):
 
 def format_ts(output_model: dict, file: Path):
 
-    file = file.with_suffix('.ts')
+    file = Path(__file__).parent.parent / ('src/ts/' + file.with_suffix('.ts').name)
 
     text = f'\nexport const {output_model["lang"]}Model = {format_value(output_model, "", output_model)};\n'
 

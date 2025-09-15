@@ -109,6 +109,7 @@ def format_nn(nn: list[dict], id: str, name: str) -> str:
 def format_c(output_model: dict, file: Path):
 
     file = file.with_suffix('.c')
+    file = Path(__file__).parent.parent / ('src/c_lib/src/' + file.with_suffix('.c').name)
     id = 'model_' + output_model["lang"] + '_'
 
     text = f'''
@@ -197,5 +198,5 @@ def format_c(output_model: dict, file: Path):
 
     text = dedent(text).strip() + '\n'
     text = re.sub(r'\n\n+', '\n\n', text)
-    header_file = file.parent / 'lorem-ipsum-models.h'
+    header_file = file.parent.parent / 'include/lorem-ipsum-models.h'
     header_file.write_text(text)

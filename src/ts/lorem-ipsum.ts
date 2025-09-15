@@ -1,5 +1,5 @@
 
-import { models, defaultModel } from '../../models/models';
+import { models, defaultModel } from './models';
 
 // -----------------------------------------------------------------------
 // #region               Local definitions and variables
@@ -416,7 +416,7 @@ export class LoremIpsum {
 
 
     private randomFromCumsum(cumsum: number[]): number {
-        const maxValue = cumsum.at(-1)!;
+        const maxValue = cumsum[cumsum.length - 1];
         if (maxValue <= 0) {
             return this.randLCG() % cumsum.length;
         }

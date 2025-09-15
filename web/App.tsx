@@ -34,7 +34,6 @@ import GitHub from '@mui/icons-material/GitHub';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import Code from '@mui/icons-material/Code';
 import './App.css'
-import Menu from '@mui/material/Menu';
 import { LoremIpsum, ILoremIpsumOptions } from '../src/ts/lorem-ipsum';
 
 

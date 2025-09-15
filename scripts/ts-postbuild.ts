@@ -86,8 +86,8 @@ async function replaceBrowserDecl(filePath: string) {
     const baseName = path.basename(filePath, path.extname(filePath));
     const dtsFilePath = path.join(dir, `${baseName}.d.ts`);
 
-    // Read the source .d.ts content from dist/esm/src/ts/lorem-ipsum.d.ts
-    const sourceDtsPath = 'dist/esm/src/ts/lorem-ipsum.d.ts';
+    // Read the source .d.ts content from dist/esm/lorem-ipsum.d.ts
+    const sourceDtsPath = 'dist/esm/lorem-ipsum.d.ts';
     const sourceDtsContent = await fs.readFile(sourceDtsPath, 'utf8');
 
     // Append the global declaration

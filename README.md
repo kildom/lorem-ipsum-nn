@@ -6,7 +6,6 @@ A deterministic Lorem Ipsum generator powered by a simple neural network.
 ## Features
 
 - Deterministic output for given seed and parameters
-- Generates consistent text
 - Can stylize generated text to resemble different languages (e.g. English, Polish)
 - Built with a minimal neural network architecture
 - Uses only integer operations, making it fast and portable
@@ -33,19 +32,23 @@ A deterministic Lorem Ipsum generator powered by a simple neural network.
 
 ## Usage
 
-You have a lot of usage options, since the generator was ported on multiple platforms.
-On each platform it gives the same deterministic output.
+You have multiple usage options:
 
-* **On-line Web Generator** - go to [`https://kildom.githib.io/lorem-ipsum-nn/`](https://kildom.github.io/lorem-ipsum-nn/).
-* **Portable C/C++ Library** - see [`src/c_lib/README.md`](src/c_lib/README.md).
-* **JavaScript Package** - see [`src/js/README.md`](`src/python/README.md`), also available on [`npm`](https://www.npmjs.com/package/lorem-ipsum-nn), or as a standalone script from [`releases`](https://github.com/kildom/lorem-ipsum-nn/releases), tested with browsers, Node, and Deno. Includes TypeScript declarations.
-* **CLI Program** - see [`src/c_cli/README.md`](src/c_cli/README.md), you can also download precompiled binaries from [`releases`](https://github.com/kildom/lorem-ipsum-nn/releases).
+* **On-line Web Generator**
 
-TODO:
+  [`https://kildom.github.io/lorem-ipsum-nn/`](https://kildom.github.io/lorem-ipsum-nn/)
 
-* **Python Package** - see [`src/python/README.md`](`src/python/README.md`), or install with [`pip`](https://pypi.org/project/lorem-ipsum-nn/)
+* **TypeScript/JavaScript**
+
+  [`src/ts/README.md`](src/ts/README.md)
+
+* **C/C++**
+
+  Portable Library: [`src/c_lib/README.md`](src/c_lib/README.md)
+
+  CLI Application: [`src/c_cli/README.md`](src/c_cli/README.md)
 
 ## Training
 
-You can train your own models, for example, to add new language stylization.
-See [`train/README.md`](train/README.md) for details.
+You can train custom models — for example, to support additional language stylizations.  
+See the [`train/README.md`](train/README.md) file for detailed instructions.
