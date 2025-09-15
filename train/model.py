@@ -124,7 +124,9 @@ class GeneratorSharedNet(nn.Module):
     def _init_weights_callback(self, m):
         if isinstance(m, nn.Linear):
             print(f"Initializing weights for {m}")
-            torch.nn.init.kaiming_uniform_(m.weight, nonlinearity='relu')
+            # torch.nn.init.kaiming_uniform_(m.weight, nonlinearity='relu')
+            # torch.nn.init.uniform_(m.weight, -1, 1)
+            torch.nn.init.xavier_normal_(m.weight)
             if m.bias is not None:
                 torch.nn.init.zeros_(m.bias)
 

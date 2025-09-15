@@ -22,7 +22,7 @@ class TextDataset(Dataset):
         self.text = lang.get_text()
         self.text = self.text.lower()
         self.text = re.sub('[^' + lang.ALPHABET + ' ]', ' ', self.text, flags=re.IGNORECASE)
-        self.text = re.sub('\s+', ' ', self.text)
+        self.text = re.sub(r'\s+', ' ', self.text)
         self.text = self.text.strip()
         max_text_length = len(self.text) - LETTERS_PER_CONTEXT
         self.text_length = min(max_text_length, LIMIT_DATASET)

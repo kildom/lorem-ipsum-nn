@@ -8,25 +8,30 @@ from lang import get_lang_config, get_languages
 
 MAX_NUMBER_ARRAY_WIDTH = 100
 
-def format_value(value, indent):
+def format_value(value, indent, output_model: dict, key=''):
     if isinstance(value, dict):
         result = [f'{{\n']
         for key, val in value.items():
-            result.append(f'{indent}    {key}: {format_value(val, indent + "    ")},\n')
+            result.append(f'{indent}    {key}: {format_value(val, indent + "    ", output_model, key)},\n')
         result.append(f'{indent}}}')
         return ''.join(result)
     elif isinstance(value, list):
         only_numbers = all(isinstance(item, (int, float)) for item in value)
         if only_numbers:
-            text = ', '.join(f'{item}' for item in value)
+            assert all(round(item) == item for item in value)
+            text = ', '.join(f'{int(item)}' for item in value)
             lines = list(textwrap.wrap(text, width=MAX_NUMBER_ARRAY_WIDTH))
             if len(lines) == 1:
                 return '[' + text + ']'
             return '[\n' + '\n'.join(f'{indent}    {line}' for line in lines) + f'\n{indent}]'
         else:
             result = [f'[\n']
-            for item in value:
-                result.append(f'{indent}    {format_value(item, indent + "    ")},\n')
+            for i, item in enumerate(value):
+                result.append(f'{indent}    {format_value(item, indent + "    ", output_model)},')
+                if key == 'letters_embedding':
+                    space = ' ' * (24 - len(result[-1]))
+                    result.append(f'{space}// {output_model["letters"][i]}'.rstrip())
+                result.append('\n')
             result.append(f'{indent}]')
             return ''.join(result)
     elif isinstance(value, (str, int, float, bool)):
@@ -39,7 +44,7 @@ def format_ts(output_model: dict, file: Path):
 
     file = file.with_suffix('.ts')
 
-    text = f'\nexport const {output_model["lang"]}Model = {format_value(output_model, "")};\n'
+    text = f'\nexport const {output_model["lang"]}Model = {format_value(output_model, "", output_model)};\n'
 
     file.write_text(text)
 

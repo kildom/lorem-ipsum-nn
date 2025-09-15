@@ -5,6 +5,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import Dataset, DataLoader, random_split
 from tqdm import tqdm
 from datetime import datetime
+from pathlib import Path
 
 
 DEFAULT_LEARNING_RATE = 3e-3
@@ -23,7 +24,7 @@ def train(model: nn.Module, dataset: Dataset, epochs=DEFAULT_EPOCHS, lr=DEFAULT_
     criterion = nn.CrossEntropyLoss()
 
     # TensorBoard setup
-    log_dir = f"runs/train_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    log_dir = Path(__file__).parent / f"../runs/train_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     writer = SummaryWriter(log_dir)
 
     progress_bar = tqdm(total=len(train_loader) * ((epochs - 1) if skip_first_train else epochs) + len(val_loader) * epochs)

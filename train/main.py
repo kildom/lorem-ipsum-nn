@@ -1,4 +1,6 @@
 
+import socket
+import subprocess
 import re
 import sys
 import json
@@ -54,8 +56,9 @@ def train_basic_model(lang: LangConfig):
     def train_callback(model, *_):
         with torch.no_grad():
             emb = model.get_letter_embedding().detach().cpu().numpy()
-            max_values = np.max(emb, axis=0)
-            print("          - Letter embeddings max values:  ", max_values)
+            max_values = np.max(emb, axis=0).tolist()
+            num_zeros = np.sum((emb == 0).astype(np.int32), axis=0).tolist()
+            print("          - Letter embeddings max values:  ", max_values, "  zeros:  ", num_zeros, "of", emb.shape[0])
 
     if BASIC_MODEL_PATH.exists():
         header(f'Loading basic model {BASIC_MODEL_PATH}')
@@ -255,6 +258,7 @@ def quantize_model(model: GeneratorSharedNet, letter_to_embedding: npt.NDArray[n
 
     output_model = {
         'lang': model.lang.CODE,
+        'name': model.lang.NAME,
         'letters': ''.join(model.lang.LETTER_TO_INDEX.keys()),
         'letters_embedding': np.round(letter_to_embedding * letter_embedding_factors).tolist(),
         'group': group_inter_linear.store() + relu.store(GROUP_EMBEDDING_INTER_SIZE) + group_output_linear.store() + relu.store(GROUP_EMBEDDING_SIZE),
@@ -273,7 +277,7 @@ def punctuation_stats(lang: LangConfig, output_model: dict):
     text = re.sub(r"[\s,.]*\.[\s,.]*", '.', text)
     text = re.sub(r"[\s,]*,[\s,]*", ',', text)
     text = re.sub(r'\s*\w+\s*', 'a', text)
-    text = re.sub(r'\.(?:a,?){41,}', '', text)
+    text = re.sub(r'(?:^|\.)(?:a,?){41,}', '', text)
     text = re.sub(r'\.[^.]*a{21}[a,]*', '', text)
     if text[-1] != '.':
         text += '.'
@@ -297,7 +301,7 @@ def punctuation_stats(lang: LangConfig, output_model: dict):
         else:
             words_since_dot += 1
             words_since_comma += 1
-            assert words_since_dot < 41 and words_since_comma < 21
+            assert words_since_dot < 41 and words_since_comma < 21, f"words since dot: {words_since_dot}, words since comma: {words_since_comma}, position: {i}, text: {text[max(0, i - 50):i]}|{text[i:i + 50]}"
             total[words_since_dot][words_since_comma] += 1
 
     hit_dot = hit_dot[1:, 1:]
@@ -349,6 +353,22 @@ def generate_files(model_json_file: Path):
     format_c(output_model, model_json_file)
     format_ts(output_model, model_json_file)
 
+def is_port_in_use(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        return s.connect_ex(("127.0.0.1", port)) == 0
+
+def start_tensorboard_if_not_running(port: int = 6006):
+    if is_port_in_use(port):
+        print(f"TensorBoard is already running on http://localhost:{port}")
+    else:
+        logdir = (Path(__file__).parent / "../runs").resolve()
+        print(f"Starting TensorBoard at http://localhost:{port}")
+        subprocess.Popen(
+            ["tensorboard", f"--logdir={str(logdir)}", f"--port={port}"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+
 def main():
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Train neural network models for different languages')
@@ -356,6 +376,8 @@ def main():
     parser.add_argument('-g', '--gen-only', action='store_true', help='Do not train, only generate output files from previously trained models saved in JSON files.')
 
     args = parser.parse_args()
+
+    start_tensorboard_if_not_running()
 
     # Determine which languages to process
     lang_list = args.languages if args.languages else get_languages()
