@@ -1,6 +1,6 @@
 {
   "name": "lorem-ipsum-nn",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "type": "module",
   "description": "A deterministic Lorem Ipsum generator powered by a simple neural network.",
   "main": "./dist/cjs/lorem-ipsum.cjs",

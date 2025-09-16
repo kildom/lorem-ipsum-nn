@@ -27,4 +27,4 @@ For example:
 
  * if you want just latin stylization, define `LOREM_IPSUM_LA_ENABLED`.
 
- * if you don't need stylization that use alphabet not based on latin, define `LOREM_IPSUM_EL_ENABLED` and `LOREM_IPSUM_UK_ENABLED`.
+ * if you don't need stylization that use alphabet not based on latin, define `LOREM_IPSUM_EL_DISABLED` and `LOREM_IPSUM_UK_DISABLED`.

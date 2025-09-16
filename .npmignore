@@ -5,3 +5,4 @@
 !/src/ts/*.ts
 !/dist/cjs/**/*
 !/dist/esm/**/*
+!/dist/browser/**/*

@@ -12,6 +12,14 @@ on:
         options:
         - 'no'
         - 'yes'
+      publish:
+        type: choice
+        required: true
+        description: NPM Publish
+        default: 'no'
+        options:
+        - 'no'
+        - 'yes'
 jobs:
   win_build:
     runs-on: windows-latest
@@ -103,7 +111,7 @@ jobs:
         fail_on_unmatched_files: true
         generate_release_notes: true
     - name: NPM Publish
-      if: "${{ github.event.inputs.release == 'yes' }}"
+      if: "${{ github.event.inputs.publish == 'yes' }}"
       env:
         NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       run: |
